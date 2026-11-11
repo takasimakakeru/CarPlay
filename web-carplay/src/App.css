@@ -217,9 +217,16 @@ border-right: none;
 
 .content-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.5fr) minmax(260px, 0.85fr);
-  gap: 22px;
+  grid-auto-flow: column;
+  /* ↓ 1つ目の子要素を85%、それ以降（2つ目）を50%にする設定 */
+  grid-auto-columns: var(--col-width, 100%); 
+  gap: 10px;
   align-items: start;
+  overflow-x: auto;
+}
+
+.content-grid > :nth-child(2) {
+  --col-width: 50%;
 }
 
 .apps-panel,
