@@ -269,7 +269,7 @@ function App() {
     <main className={`dashboard ${theme}`}>
       <aside className="sidebar">
         <div className="brand">
-          <div className="brand-mark">W</div>
+          <img src="Apple_logo_black.svg" className="brand-mark"/>
           <span>DRIVE</span>
         </div>
 
