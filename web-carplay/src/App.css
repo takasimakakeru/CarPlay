@@ -451,12 +451,18 @@ border-right: none;
 
 @media (max-width: 850px) {
   .content-grid {
-    grid-template-columns: 1fr;
+    display: grid;
+    grid-auto-flow: column;
+    /* 1つ目の要素の基準を85%にする */
+    grid-auto-columns: var(--col-width, 85%); 
+    gap: 10px;
+    align-items: start;
+    overflow-x: auto;  /* この中だけでスクロールさせる */
   }
 
-  .right-panel {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  /* 2つ目の子要素（右側のパネル）だけ幅を50%に上書き */
+  .content-grid > :nth-child(2) {
+    --col-width: 50%;
   }
 
   .welcome {
