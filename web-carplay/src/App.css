@@ -256,7 +256,7 @@ border-right: none;
 .app-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 28px 12px;
+  gap: 20vh 6px;
 }
 
 .app-item {
@@ -277,13 +277,13 @@ border-right: none;
 }
 
 .app-icon {
-  width: clamp(54px, 6vw, 78px);
+  width: clamp(158px, 6vw, 206px);
   aspect-ratio: 1;
   border-radius: 22px;
   display: grid;
   place-items: center;
   color: white;
-  font-size: 32px;
+  font-size: 80px;
   box-shadow: 0 8px 18px rgba(0, 0, 0, 0.18);
 }
 
