@@ -197,12 +197,12 @@ border-right: none;
 .clock {
   display: flex;
   flex-direction: column;
-  align-items: flex-end;
+  align-items: center;
   gap: 8px;
 }
 
 .clock strong {
-  font-size: clamp(35px, 5vw, 60px);
+  font-size: 40px;
   font-weight: 500;
   letter-spacing: -2px;
   font-variant-numeric: tabular-nums;
@@ -210,7 +210,7 @@ border-right: none;
 
 .clock span {
   color: var(--muted);
-  font-size: 12px;
+  font-size: 15px;
 }
 
 /* CONTENT GRID */
@@ -225,16 +225,13 @@ border-right: none;
   overflow-x: auto;
 }
 
-.content-grid > :nth-child(2) {
-  --col-width: 50%;
-}
-
 .apps-panel,
 .widget {
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 22px;
   padding: 24px;
+  height: auto;
 }
 
 .section-heading {

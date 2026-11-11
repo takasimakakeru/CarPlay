@@ -255,10 +255,9 @@ function App() {
   });
 
   const date = now.toLocaleDateString("ja-JP", {
-    month: "long",
-    day: "numeric",
-    weekday: "long",
-  });
+  month: "2-digit", // 常に2桁（例: 05月）にする場合は "2-digit"、1桁を許容するなら "numeric"
+  day: "2-digit",   // 常に2桁にする場合は "2-digit"、1桁を許容するなら "numeric"
+});
 
   function openPage(page) {
     setActivePage(page);
@@ -269,10 +268,11 @@ function App() {
     <main className={`dashboard ${theme}`}>
       <aside className="sidebar">
         <div className="brand">
-          <img src="Apple_logo_black.svg" className="brand-mark"/>
-          <span>DRIVE</span>
+         <div className="clock">
+                <strong>{time}</strong>
+                <span>{date}</span>
+              </div>
         </div>
-
         <nav className="side-nav">
           {[
             { name: "ホーム", icon: "⌂" },
@@ -333,25 +333,8 @@ function App() {
           </section>
         ) : activePage === "ホーム" ? (
           <>
-            <header className="topbar">
-              <div className="topbar-date">{date}</div>
-              <div className="topbar-status">
-                <span>● オンライン</span>
-                <span>Wi-Fi</span>
-                <span>▰ 100%</span>
-              </div>
-            </header>
-
             <section className="welcome">
-              <div>
-                <p className="eyebrow">YOUR DRIVE SPACE</p>
-                <h1>おかえりなさい。</h1>
-                <p className="subheading">今日も快適なドライブを。</p>
-              </div>
-              <div className="clock">
-                <strong>{time}</strong>
-                <span>{date}</span>
-              </div>
+              
             </section>
 
             <section className="content-grid">
