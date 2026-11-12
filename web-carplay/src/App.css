@@ -285,7 +285,8 @@ border-right: none;
   flex: 0 0 auto;
   line-height: 1;
   overflow: hidden;
-  border-radius: 30%;
+  border-radius: 80%; 
+  corner-shape: superellipse(1.5); /* 2より少し丸みを強めるとGalaxyに近づきます */
 }
 
 .app-name {
