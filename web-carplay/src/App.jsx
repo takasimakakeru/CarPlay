@@ -1,16 +1,10 @@
-
-import { useEffect, useState } from "react";
-import {
-  MapContainer,
-  TileLayer,
-  Marker,
-  Popup,
-  useMap,
-  useMapEvents,
-  CircleMarker,
-} from "react-leaflet";
-import "leaflet/dist/leaflet.css";
+import React, { useEffect, useState } from "react";
+import * as maplibregl from "maplibre-gl";
+import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
+import "maplibre-gl/dist/maplibre-gl.css";
 import "./App.css";
+
+maplibregl.setWorkerUrl(workerUrl);
 
 const apps = [
   { name: "マップ", icon: "⌖", color: "#3985f7" },
@@ -23,40 +17,95 @@ const apps = [
   { name: "写真", icon: "◈", color: "#9a70e8" },
 ];
 
-const DEFAULT_POSITION = [35.6812, 139.7671];
-
-function MapController({ target }) {
-  const map = useMap();
-
-  useEffect(() => {
-    if (target) {
-      map.flyTo(target, 15, { duration: 1.2 });
-    }
-  }, [target, map]);
-
-  return null;
-}
-
-function MapClickHandler({ onSelect }) {
-  useMapEvents({
-    click(event) {
-      onSelect([
-        event.latlng.lat,
-        event.latlng.lng,
-      ]);
-    },
-  });
-
-  return null;
-}
-
 function MapPage() {
+  const mapRef = React.useRef(null);
+  const mapContainerRef = React.useRef(null);
+
   const [position, setPosition] = useState(null);
-  const [target, setTarget] = useState(null);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (!mapContainerRef.current || mapRef.current) return;
+
+    const map = new maplibregl.Map({
+  container: mapContainerRef.current,
+  style: "https://tiles.openfreemap.org/styles/dark",
+  center: [139.7671, 35.6812],
+  zoom: 12,
+});
+
+    map.addControl(
+      new maplibregl.NavigationControl(),
+      "top-right"
+    );
+
+    map.on("click", (event) => {
+      const coords = [
+        event.lngLat.lng,
+        event.lngLat.lat,
+      ];
+
+      setPosition(coords);
+    });
+
+    mapRef.current = map;
+
+    return () => {
+      map.remove();
+      mapRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !position) return;
+
+    map.flyTo({
+      center: position,
+      zoom: 15,
+      speed: 1.2,
+    });
+
+    if (map.getSource("selected-point")) {
+      map.getSource("selected-point").setData({
+        type: "Feature",
+        geometry: {
+          type: "Point",
+          coordinates: position,
+        },
+      });
+    } else {
+      map.on("load", () => {
+        if (map.getSource("selected-point")) return;
+
+        map.addSource("selected-point", {
+          type: "geojson",
+          data: {
+            type: "Feature",
+            geometry: {
+              type: "Point",
+              coordinates: position,
+            },
+          },
+        });
+
+        map.addLayer({
+          id: "selected-point",
+          type: "circle",
+          source: "selected-point",
+          paint: {
+            "circle-radius": 9,
+            "circle-color": "#3985f7",
+            "circle-stroke-width": 3,
+            "circle-stroke-color": "#ffffff",
+          },
+        });
+      });
+    }
+  }, [position]);
 
   async function searchPlace(event) {
     event.preventDefault();
@@ -98,13 +147,10 @@ function MapPage() {
   }
 
   function selectResult(place) {
-    const coords = [
-      Number(place.lat),
+    setPosition([
       Number(place.lon),
-    ];
-
-    setPosition(coords);
-    setTarget(coords);
+      Number(place.lat),
+    ]);
     setResults([]);
   }
 
@@ -118,27 +164,15 @@ function MapPage() {
 
     navigator.geolocation.getCurrentPosition(
       (result) => {
-        const coords = [
-          result.coords.latitude,
+        setPosition([
           result.coords.longitude,
-        ];
-
-        setPosition(coords);
-        setTarget(coords);
+          result.coords.latitude,
+        ]);
       },
       () => {
-        setError("位置情報を取得できませんでした。ブラウザの許可設定を確認してね。");
-      },
-      {
-        enableHighAccuracy: true,
-        timeout: 10000,
+        setError("位置情報を取得できませんでした。");
       }
     );
-  }
-
-  function selectMapPoint(coords) {
-    setPosition(coords);
-    setResults([]);
   }
 
   return (
@@ -183,37 +217,10 @@ function MapPage() {
       )}
 
       <div className="map-container">
-        <MapContainer
-          center={DEFAULT_POSITION}
-          zoom={13}
-          scrollWheelZoom={true}
+        <div
+          ref={mapContainerRef}
           className="leaflet-map"
-        >
-          
-<TileLayer
-  url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
-  attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-/>
-
-
-          <MapController target={target} />
-          <MapClickHandler onSelect={selectMapPoint} />
-
-          {position && (
-            <CircleMarker
-              center={position}
-              radius={10}
-              pathOptions={{
-                color: "#ffffff",
-                fillColor: "#3985f7",
-                fillOpacity: 1,
-                weight: 3,
-              }}
-            >
-              <Popup>選択した地点</Popup>
-            </CircleMarker>
-          )}
-        </MapContainer>
+        />
 
         <div className="map-controls">
           <button onClick={locateMe} title="現在地へ移動">
@@ -231,7 +238,7 @@ function MapPage() {
           <span className="map-status-dot" />
           <span>MAP ONLINE</span>
         </div>
-        <span>© OpenStreetMap contributors</span>
+        <span>MAPLIBRE GL JS</span>
       </div>
     </section>
   );
