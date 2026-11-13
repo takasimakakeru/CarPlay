@@ -20,8 +20,11 @@ const apps = [
 function MapPage() {
   const mapRef = React.useRef(null);
   const mapContainerRef = React.useRef(null);
+  const currentMarkerRef = React.useRef(null);
 
   const [position, setPosition] = useState(null);
+  const [currentPosition, setCurrentPosition] = useState(null);
+
   const [query, setQuery] = useState("");
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -32,10 +35,10 @@ function MapPage() {
 
     const map = new maplibregl.Map({
   container: mapContainerRef.current,
-  style: "https://tiles.openfreemap.org/styles/dark",
+  style: "https://tiles.openfreemap.org/styles/liberty",
   center: [139.7671, 35.6812],
   zoom: 12,
-});
+  });
 
     map.addControl(
       new maplibregl.NavigationControl(),
@@ -59,6 +62,35 @@ function MapPage() {
     };
   }, []);
 
+    // 現在地マーカーの生成・更新
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !currentPosition) return;
+
+    if (!currentMarkerRef.current) {
+      const markerElement = document.createElement("div");
+
+      markerElement.className = "current-location-marker";
+      markerElement.setAttribute("role", "img");
+      markerElement.setAttribute("aria-label", "現在地");
+
+      markerElement.innerHTML = `
+        <span class="current-location-pulse"></span>
+        <span class="current-location-core"></span>
+      `;
+
+      currentMarkerRef.current = new maplibregl.Marker({
+        element: markerElement,
+        anchor: "center",
+      })
+        .setLngLat(currentPosition)
+        .addTo(map);
+    } else {
+      currentMarkerRef.current.setLngLat(currentPosition);
+    }
+  }, [currentPosition]);
+
+  
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !position) return;
@@ -69,18 +101,8 @@ function MapPage() {
       speed: 1.2,
     });
 
-    if (map.getSource("selected-point")) {
-      map.getSource("selected-point").setData({
-        type: "Feature",
-        geometry: {
-          type: "Point",
-          coordinates: position,
-        },
-      });
-    } else {
-      map.on("load", () => {
-        if (map.getSource("selected-point")) return;
-
+    const addSelectedPoint = () => {
+      if (!map.getSource("selected-point")) {
         map.addSource("selected-point", {
           type: "geojson",
           data: {
@@ -97,13 +119,28 @@ function MapPage() {
           type: "circle",
           source: "selected-point",
           paint: {
-            "circle-radius": 9,
+            "circle-radius": 10,
             "circle-color": "#3985f7",
             "circle-stroke-width": 3,
             "circle-stroke-color": "#ffffff",
+            "circle-blur": 0.1,
           },
         });
-      });
+      } else {
+        map.getSource("selected-point").setData({
+          type: "Feature",
+          geometry: {
+            type: "Point",
+            coordinates: position,
+          },
+        });
+      }
+    };
+
+    if (map.isStyleLoaded()) {
+      addSelectedPoint();
+    } else {
+      map.once("load", addSelectedPoint);
     }
   }, [position]);
 
@@ -154,7 +191,7 @@ function MapPage() {
     setResults([]);
   }
 
-  function locateMe() {
+    function locateMe() {
     setError("");
 
     if (!navigator.geolocation) {
@@ -164,15 +201,51 @@ function MapPage() {
 
     navigator.geolocation.getCurrentPosition(
       (result) => {
-        setPosition([
+        const coords = [
           result.coords.longitude,
           result.coords.latitude,
-        ]);
+        ];
+
+        setCurrentPosition(coords);
+
+        mapRef.current?.flyTo({
+          center: coords,
+          zoom: 16,
+          speed: 1.2,
+        });
       },
       () => {
         setError("位置情報を取得できませんでした。");
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 5000,
       }
     );
+  }
+
+    function zoomIn() {
+    mapRef.current?.zoomIn({ duration: 250 });
+  }
+
+  function zoomOut() {
+    mapRef.current?.zoomOut({ duration: 250 });
+  }
+
+  function resetNorth() {
+    mapRef.current?.resetNorth({ duration: 300 });
+  }
+
+  function recenterMap() {
+    const map = mapRef.current;
+    if (!map) return;
+
+    map.flyTo({
+      center: position || [139.7671, 35.6812],
+      zoom: 15,
+      speed: 1.2,
+    });
   }
 
   return (
@@ -222,11 +295,50 @@ function MapPage() {
           className="leaflet-map"
         />
 
-        <div className="map-controls">
-          <button onClick={locateMe} title="現在地へ移動">
+                <div className="map-controls">
+          <button onClick={zoomIn} title="拡大" aria-label="地図を拡大">
+            ＋
+          </button>
+
+          <button onClick={zoomOut} title="縮小" aria-label="地図を縮小">
+            −
+          </button>
+
+          <div className="map-control-divider" />
+
+          <button onClick={resetNorth} title="北向きに戻す" aria-label="北向きに戻す">
+            N
+          </button>
+
+          <button onClick={locateMe} title="現在地を取得" aria-label="現在地を取得">
             ◎
           </button>
+
+          <button onClick={recenterMap} title="選択地点へ戻る" aria-label="選択地点へ戻る">
+            ⌖
+          </button>
         </div>
+
+                {position && (
+          <div className="map-location-card">
+            <div className="map-location-card-icon">⌖</div>
+
+            <div className="map-location-card-info">
+              <strong>選択地点</strong>
+              <span>
+                {position[1].toFixed(5)}, {position[0].toFixed(5)}
+              </span>
+            </div>
+
+            <button
+              onClick={() => setPosition(null)}
+              title="選択を解除"
+              aria-label="選択を解除"
+            >
+              ×
+            </button>
+          </div>
+        )}
 
         <div className="map-hint">
           地図をクリックして地点を選択
