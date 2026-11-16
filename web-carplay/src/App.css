@@ -39,6 +39,7 @@ button:disabled {
 ===================================================== */
 
 .dashboard {
+  /* 基本カラー */
   --bg: #101116;
   --sidebar: #17191f;
   --panel: #1c1f27;
@@ -46,6 +47,8 @@ button:disabled {
   --text: #f5f6fa;
   --muted: #9297a5;
   --border: rgba(255, 255, 255, 0.07);
+
+  /* マップ用ガラス表現 */
   --map-glass-bg: rgba(25, 32, 43, 0.72);
   --map-glass-border: rgba(255, 255, 255, 0.13);
   --map-glass-text: #f1f5f9;
@@ -64,6 +67,8 @@ button:disabled {
   transition: background 0.25s, color 0.25s;
 }
 
+/* ライトモード */
+
 .dashboard.light {
   --bg: #f0f2f6;
   --sidebar: #ffffff;
@@ -72,8 +77,9 @@ button:disabled {
   --text: #20232b;
   --muted: #777d8b;
   --border: rgba(0, 0, 0, 0.08);
+
   --map-glass-bg: rgba(255, 255, 255, 0.76);
-  --map-glass-border: rgba(255, 255, 255, 0.75);
+  --map-glass-border: rgba(0, 0, 0, 0.10);
   --map-glass-text: #263445;
   --map-glass-muted: rgba(38, 52, 69, 0.65);
   --map-glass-hover: rgba(0, 0, 0, 0.06);
@@ -261,7 +267,7 @@ button:disabled {
   letter-spacing: 1.5px;
 }
 
-/* APP GRID */
+/* アプリ一覧 */
 
 .app-grid {
   display: grid;
@@ -471,7 +477,7 @@ button:disabled {
   overflow: hidden;
 }
 
-/* MAP CANVAS */
+/* 地図本体 */
 
 .map-container {
   position: absolute;
@@ -490,7 +496,26 @@ button:disabled {
   height: 100%;
 }
 
-/* SEARCH BAR */
+/* -----------------------------------------------------
+   マップ共通ガラスデザイン
+----------------------------------------------------- */
+
+.map-search,
+.search-results,
+.map-controls,
+.map-location-card,
+.map-hint {
+  background: var(--map-glass-bg);
+  border: 1px solid var(--map-glass-border);
+  color: var(--map-glass-text);
+  box-shadow: var(--map-glass-shadow);
+  -webkit-backdrop-filter: blur(18px) saturate(160%);
+  backdrop-filter: blur(18px) saturate(160%);
+}
+
+/* -----------------------------------------------------
+   検索ボックス
+----------------------------------------------------- */
 
 .map-toolbar {
   position: absolute;
@@ -508,18 +533,13 @@ button:disabled {
   width: 100%;
   min-width: 0;
   padding: 9px 10px 9px 15px;
-  border: 1px solid rgba(255, 255, 255, 0.18);
   border-radius: 15px;
-  background: rgba(20, 25, 34, 0.78);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.2);
   pointer-events: auto;
 }
 
 .map-search > span {
   flex-shrink: 0;
-  color: rgba(255, 255, 255, 0.7);
+  color: var(--map-glass-muted);
   font-size: 22px;
 }
 
@@ -530,12 +550,12 @@ button:disabled {
   border: none;
   outline: none;
   background: transparent;
-  color: white;
+  color: var(--map-glass-text);
   font-size: 14px;
 }
 
 .map-search input::placeholder {
-  color: rgba(255, 255, 255, 0.55);
+  color: var(--map-glass-muted);
 }
 
 .map-search button {
@@ -552,56 +572,9 @@ button:disabled {
   opacity: 0.6;
 }
 
-/* 地図上のすりガラス共通デザイン */
-.map-search,
-.search-results,
-.map-controls,
-.map-location-card,
-.map-hint {
-  background: var(--map-glass-bg);
-  border: 1px solid var(--map-glass-border);
-  color: var(--map-glass-text);
-  box-shadow: var(--map-glass-shadow);
-  -webkit-backdrop-filter: blur(18px) saturate(160%);
-  backdrop-filter: blur(18px) saturate(160%);
-}
-
-/* 検索欄 */
-.map-search input {
-  color: var(--map-glass-text);
-}
-
-.map-search input::placeholder,
-.map-search > span {
-  color: var(--map-glass-muted);
-}
-
-/* 検索結果 */
-.search-results button {
-  color: var(--map-glass-text);
-}
-
-.search-results button:hover {
-  background: var(--map-glass-hover);
-}
-
-/* 地図コントロール */
-.map-controls button {
-  background: var(--map-glass-hover);
-  color: var(--map-glass-text);
-}
-
-.map-controls button:hover {
-  background: rgba(57, 133, 247, 0.85);
-  color: white;
-}
-
-.map-location-card-info span,
-.map-location-card > button {
-  color: var(--map-glass-muted);
-}
-
-/* SEARCH RESULTS */
+/* -----------------------------------------------------
+   検索候補ウィンドウ
+----------------------------------------------------- */
 
 .search-results {
   position: absolute;
@@ -612,12 +585,7 @@ button:disabled {
   max-height: 40%;
   overflow-y: auto;
   padding: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 14px;
-  background: rgba(20, 25, 34, 0.92);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.2);
 }
 
 .search-results button {
@@ -629,13 +597,13 @@ button:disabled {
   border: none;
   border-radius: 9px;
   background: transparent;
-  color: white;
+  color: var(--map-glass-text);
   text-align: left;
   font-size: 12px;
 }
 
 .search-results button:hover {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--map-glass-hover);
 }
 
 .search-results button span:last-child {
@@ -644,7 +612,9 @@ button:disabled {
   white-space: nowrap;
 }
 
-/* ERROR */
+/* -----------------------------------------------------
+   エラー表示
+----------------------------------------------------- */
 
 .map-error {
   position: absolute;
@@ -653,13 +623,16 @@ button:disabled {
   z-index: 13;
   max-width: min(420px, calc(100% - 105px));
   padding: 12px 15px;
+  border: 1px solid rgba(255, 120, 120, 0.25);
   border-radius: 12px;
   background: rgba(100, 30, 30, 0.92);
   color: #ffaaaa;
   font-size: 12px;
 }
 
-/* MAP CONTROLS */
+/* -----------------------------------------------------
+   地図コントロール
+----------------------------------------------------- */
 
 .map-controls {
   position: absolute;
@@ -670,38 +643,41 @@ button:disabled {
   flex-direction: column;
   gap: 7px;
   padding: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 16px;
-  background: rgba(20, 25, 34, 0.55);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.2);
 }
 
 .map-controls button {
   width: 42px;
   height: 42px;
-  border: none;
+  border: 1px solid transparent;
   border-radius: 11px;
-  background: rgba(255, 255, 255, 0.12);
-  color: white;
+  background: var(--map-glass-hover);
+  color: var(--map-glass-text);
   font-size: 21px;
   font-weight: 600;
-  transition: background 0.2s, transform 0.2s;
+  transition: background 0.2s, color 0.2s, transform 0.2s;
 }
 
 .map-controls button:hover {
-  background: rgba(57, 133, 247, 0.85);
+  background: #3985f7;
+  color: white;
   transform: scale(1.04);
+}
+
+.map-controls button:active {
+  background: #286acb;
+  color: white;
 }
 
 .map-control-divider {
   height: 1px;
   margin: 2px 4px;
-  background: rgba(255, 255, 255, 0.2);
+  background: var(--map-glass-border);
 }
 
-/* SELECTED LOCATION */
+/* -----------------------------------------------------
+   選択地点カード
+----------------------------------------------------- */
 
 .map-location-card {
   position: absolute;
@@ -713,12 +689,7 @@ button:disabled {
   gap: 12px;
   max-width: min(360px, calc(100% - 40px));
   padding: 13px 15px;
-  border: 1px solid rgba(255, 255, 255, 0.13);
   border-radius: 15px;
-  background: rgba(20, 25, 34, 0.9);
-  color: white;
-  backdrop-filter: blur(16px);
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.22);
 }
 
 .map-location-card-icon {
@@ -745,7 +716,7 @@ button:disabled {
 }
 
 .map-location-card-info span {
-  color: rgba(255, 255, 255, 0.65);
+  color: var(--map-glass-muted);
   font-size: 11px;
   overflow-wrap: anywhere;
 }
@@ -754,11 +725,13 @@ button:disabled {
   margin-left: auto;
   border: none;
   background: transparent;
-  color: rgba(255, 255, 255, 0.7);
+  color: var(--map-glass-muted);
   font-size: 22px;
 }
 
-/* MAP HINT */
+/* -----------------------------------------------------
+   地図ヒント
+----------------------------------------------------- */
 
 .map-hint {
   position: absolute;
@@ -766,15 +739,14 @@ button:disabled {
   left: 15px;
   z-index: 4;
   padding: 9px 13px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 10px;
-  background: rgba(20, 25, 34, 0.78);
-  color: white;
   font-size: 10px;
   pointer-events: none;
 }
 
-/* MAP STATUS */
+/* -----------------------------------------------------
+   地図ステータス
+----------------------------------------------------- */
 
 .map-bottom {
   position: absolute;
@@ -1237,61 +1209,4 @@ button:disabled {
   .nav-button small {
     font-size: 6px;
   }
-}
-
-/* マップコントロールのテーマ切り替え */
-.map-controls {
-  background: var(--map-glass-bg);
-  border: 1px solid var(--map-glass-border);
-  box-shadow: var(--map-glass-shadow);
-  backdrop-filter: blur(18px) saturate(160%);
-  -webkit-backdrop-filter: blur(18px) saturate(160%);
-}
-
-.map-controls button {
-  background: var(--map-glass-hover);
-  color: var(--map-glass-text);
-  border: 1px solid transparent;
-}
-
-.map-controls button:hover {
-  background: #3985f7;
-  color: #ffffff;
-}
-
-.map-controls button:active {
-  background: #286acb;
-  color: #ffffff;
-}
-
-.map-controls .control-divider {
-  background: var(--map-glass-border);
-}
-
-/* 検索候補ウィンドウのテーマ対応 */
-.search-results {
-  background: var(--map-glass-bg) !important;
-  border: 1px solid var(--map-glass-border) !important;
-  color: var(--map-glass-text) !important;
-
-  box-shadow: var(--map-glass-shadow) !important;
-
-  -webkit-backdrop-filter: blur(18px) saturate(160%);
-  backdrop-filter: blur(18px) saturate(160%);
-}
-
-/* 検索候補の文字 */
-.search-results button {
-  color: var(--map-glass-text) !important;
-  background: transparent !important;
-}
-
-/* 候補にマウスを乗せたとき */
-.search-results button:hover {
-  background: var(--map-glass-hover) !important;
-}
-
-/* 候補一覧内の補助テキスト */
-.search-results span {
-  color: var(--map-glass-muted) !important;
 }
