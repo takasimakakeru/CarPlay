@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from "react";
+
+import React, { useEffect, useRef, useState } from "react";
 import * as maplibregl from "maplibre-gl";
 import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
 import "maplibre-gl/dist/maplibre-gl.css";
@@ -17,59 +18,52 @@ const apps = [
   { name: "写真", icon: "◈", color: "#9a70e8" },
 ];
 
+const DEFAULT_MAP_CENTER = [139.7671, 35.6812];
+
 function MapPage() {
-  const mapRef = React.useRef(null);
-  const mapContainerRef = React.useRef(null);
-  const currentMarkerRef = React.useRef(null);
+  const mapRef = useRef(null);
+  const mapContainerRef = useRef(null);
+  const currentMarkerRef = useRef(null);
 
   const [position, setPosition] = useState(null);
   const [currentPosition, setCurrentPosition] = useState(null);
-
   const [query, setQuery] = useState("");
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
+  // 地図の初期化
   useEffect(() => {
     if (!mapContainerRef.current || mapRef.current) return;
 
     const map = new maplibregl.Map({
-  container: mapContainerRef.current,
-  style: "https://tiles.openfreemap.org/styles/liberty",
-  center: [139.7671, 35.6812],
-  zoom: 12,
-  });
-
-    map.addControl(
-      new maplibregl.NavigationControl(),
-      "top-right"
-    );
+      container: mapContainerRef.current,
+      style: "https://tiles.openfreemap.org/styles/liberty",
+      center: DEFAULT_MAP_CENTER,
+      zoom: 12,
+    });
 
     map.on("click", (event) => {
-      const coords = [
-        event.lngLat.lng,
-        event.lngLat.lat,
-      ];
-
-      setPosition(coords);
+      setPosition([event.lngLat.lng, event.lngLat.lat]);
     });
 
     mapRef.current = map;
 
     return () => {
+      currentMarkerRef.current?.remove();
+      currentMarkerRef.current = null;
       map.remove();
       mapRef.current = null;
     };
   }, []);
 
-    // 現在地マーカーの生成・更新
+  // 現在地マーカー
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !currentPosition) return;
 
     if (!currentMarkerRef.current) {
       const markerElement = document.createElement("div");
-
       markerElement.className = "current-location-marker";
       markerElement.setAttribute("role", "img");
       markerElement.setAttribute("aria-label", "現在地");
@@ -90,7 +84,7 @@ function MapPage() {
     }
   }, [currentPosition]);
 
-  
+  // 選択地点のマーカー
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !position) return;
@@ -102,16 +96,18 @@ function MapPage() {
     });
 
     const addSelectedPoint = () => {
+      const pointData = {
+        type: "Feature",
+        geometry: {
+          type: "Point",
+          coordinates: position,
+        },
+      };
+
       if (!map.getSource("selected-point")) {
         map.addSource("selected-point", {
           type: "geojson",
-          data: {
-            type: "Feature",
-            geometry: {
-              type: "Point",
-              coordinates: position,
-            },
-          },
+          data: pointData,
         });
 
         map.addLayer({
@@ -127,13 +123,7 @@ function MapPage() {
           },
         });
       } else {
-        map.getSource("selected-point").setData({
-          type: "Feature",
-          geometry: {
-            type: "Point",
-            coordinates: position,
-          },
-        });
+        map.getSource("selected-point").setData(pointData);
       }
     };
 
@@ -144,6 +134,7 @@ function MapPage() {
     }
   }, [position]);
 
+  // 場所検索
   async function searchPlace(event) {
     event.preventDefault();
 
@@ -155,7 +146,7 @@ function MapPage() {
 
     try {
       const params = new URLSearchParams({
-        q: query,
+        q: query.trim(),
         format: "jsonv2",
         limit: "5",
       });
@@ -184,14 +175,12 @@ function MapPage() {
   }
 
   function selectResult(place) {
-    setPosition([
-      Number(place.lon),
-      Number(place.lat),
-    ]);
+    setPosition([Number(place.lon), Number(place.lat)]);
     setResults([]);
   }
 
-    function locateMe() {
+  // 現在地取得
+  function locateMe() {
     setError("");
 
     if (!navigator.geolocation) {
@@ -225,7 +214,7 @@ function MapPage() {
     );
   }
 
-    function zoomIn() {
+  function zoomIn() {
     mapRef.current?.zoomIn({ duration: 250 });
   }
 
@@ -242,7 +231,7 @@ function MapPage() {
     if (!map) return;
 
     map.flyTo({
-      center: position || [139.7671, 35.6812],
+      center: position || DEFAULT_MAP_CENTER,
       zoom: 15,
       speed: 1.2,
     });
@@ -251,22 +240,16 @@ function MapPage() {
   return (
     <section className="map-page">
       <div className="map-toolbar">
-        <div className="map-title">
-          <span className="map-title-icon">⌖</span>
-          <div>
-            <h1>マップ</h1>
-            <p>EXPLORE YOUR WORLD</p>
-          </div>
-        </div>
-
         <form className="map-search" onSubmit={searchPlace}>
-          <span>⌕</span>
+          <span aria-hidden="true">⌕</span>
+
           <input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="場所や住所を検索..."
             aria-label="場所や住所を検索"
           />
+
           <button type="submit" disabled={loading}>
             {loading ? "検索中..." : "検索"}
           </button>
@@ -282,7 +265,7 @@ function MapPage() {
               key={place.place_id}
               onClick={() => selectResult(place)}
             >
-              <span>⌖</span>
+              <span aria-hidden="true">⌖</span>
               <span>{place.display_name}</span>
             </button>
           ))}
@@ -290,12 +273,9 @@ function MapPage() {
       )}
 
       <div className="map-container">
-        <div
-          ref={mapContainerRef}
-          className="leaflet-map"
-        />
+        <div ref={mapContainerRef} className="leaflet-map" />
 
-                <div className="map-controls">
+        <div className="map-controls">
           <button onClick={zoomIn} title="拡大" aria-label="地図を拡大">
             ＋
           </button>
@@ -319,7 +299,7 @@ function MapPage() {
           </button>
         </div>
 
-                {position && (
+        {position && (
           <div className="map-location-card">
             <div className="map-location-card-icon">⌖</div>
 
@@ -350,6 +330,7 @@ function MapPage() {
           <span className="map-status-dot" />
           <span>MAP ONLINE</span>
         </div>
+
         <span>MAPLIBRE GL JS</span>
       </div>
     </section>
@@ -363,7 +344,10 @@ function App() {
   const [now, setNow] = useState(new Date());
 
   useEffect(() => {
-    const timer = setInterval(() => setNow(new Date()), 1000);
+    const timer = setInterval(() => {
+      setNow(new Date());
+    }, 1000);
+
     return () => clearInterval(timer);
   }, []);
 
@@ -374,24 +358,35 @@ function App() {
   });
 
   const date = now.toLocaleDateString("ja-JP", {
-  month: "2-digit", // 常に2桁（例: 05月）にする場合は "2-digit"、1桁を許容するなら "numeric"
-  day: "2-digit",   // 常に2桁にする場合は "2-digit"、1桁を許容するなら "numeric"
-});
+    month: "2-digit",
+    day: "2-digit",
+  });
+
+  const selectedApp = apps.find((app) => app.name === activeApp);
 
   function openPage(page) {
     setActivePage(page);
     setActiveApp(null);
   }
 
+  function openApp(app) {
+    if (app.name === "マップ") {
+      openPage("マップ");
+    } else {
+      setActiveApp(app.name);
+    }
+  }
+
   return (
     <main className={`dashboard ${theme}`}>
       <aside className="sidebar">
         <div className="brand">
-         <div className="clock">
-                <strong>{time}</strong>
-                <span>{date}</span>
-              </div>
+          <div className="clock">
+            <strong>{time}</strong>
+            <span>{date}</span>
+          </div>
         </div>
+
         <nav className="side-nav">
           {[
             { name: "ホーム", icon: "⌂" },
@@ -417,13 +412,17 @@ function App() {
           <button
             className="nav-button"
             onClick={() =>
-              setTheme(theme === "dark" ? "light" : "dark")
+              setTheme((current) =>
+                current === "dark" ? "light" : "dark"
+              )
             }
             title="テーマ切り替え"
+            aria-label="テーマ切り替え"
           >
             <span>{theme === "dark" ? "☀" : "☾"}</span>
             <small>テーマ</small>
           </button>
+
           <div className="connection-dot" title="オンライン" />
         </div>
       </aside>
@@ -439,22 +438,20 @@ function App() {
             >
               ← ホームに戻る
             </button>
+
             <div
               className="large-app-icon"
-              style={{
-                background: apps.find((a) => a.name === activeApp)?.color,
-              }}
+              style={{ background: selectedApp?.color }}
             >
-              {apps.find((a) => a.name === activeApp)?.icon}
+              {selectedApp?.icon}
             </div>
+
             <h1>{activeApp}</h1>
             <p>このアプリの機能はこれから実装していくよ。</p>
           </section>
         ) : activePage === "ホーム" ? (
           <>
-            <section className="welcome">
-              
-            </section>
+            <section className="welcome" />
 
             <section className="content-grid">
               <div className="apps-panel">
@@ -468,13 +465,7 @@ function App() {
                     <button
                       className="app-item"
                       key={app.name}
-                      onClick={() => {
-                        if (app.name === "マップ") {
-                          openPage("マップ");
-                        } else {
-                          setActiveApp(app.name);
-                        }
-                      }}
+                      onClick={() => openApp(app)}
                     >
                       <span
                         className="app-icon"
@@ -482,6 +473,7 @@ function App() {
                       >
                         {app.icon}
                       </span>
+
                       <span className="app-name">{app.name}</span>
                     </button>
                   ))}
@@ -494,18 +486,22 @@ function App() {
                     <h2>再生中</h2>
                     <span>NOW PLAYING</span>
                   </div>
+
                   <div className="music-content">
                     <div className="album-art">♫</div>
+
                     <div className="track-info">
                       <strong>Music Player</strong>
                       <span>お気に入りの音楽を再生</span>
                     </div>
                   </div>
+
                   <div className="music-controls">
                     <button aria-label="前の曲">◀◀</button>
                     <button className="play-button" aria-label="再生">▶</button>
                     <button aria-label="次の曲">▶▶</button>
                   </div>
+
                   <p className="music-note">
                     ※ 音楽再生機能は今後追加予定
                   </p>
@@ -516,6 +512,7 @@ function App() {
                     <h2>天気</h2>
                     <span>WEATHER</span>
                   </div>
+
                   <div className="weather-content">
                     <span className="weather-icon">☀</span>
                     <div>
@@ -524,7 +521,6 @@ function App() {
                     </div>
                   </div>
                 </section>
-                
               </div>
             </section>
           </>
@@ -536,6 +532,7 @@ function App() {
             >
               ← ホームに戻る
             </button>
+
             <h1>{activePage}</h1>
             <p>この画面はこれから実装していくよ。</p>
           </section>
