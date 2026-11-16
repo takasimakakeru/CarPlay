@@ -1267,3 +1267,31 @@ button:disabled {
 .map-controls .control-divider {
   background: var(--map-glass-border);
 }
+
+/* 検索候補ウィンドウのテーマ対応 */
+.search-results {
+  background: var(--map-glass-bg) !important;
+  border: 1px solid var(--map-glass-border) !important;
+  color: var(--map-glass-text) !important;
+
+  box-shadow: var(--map-glass-shadow) !important;
+
+  -webkit-backdrop-filter: blur(18px) saturate(160%);
+  backdrop-filter: blur(18px) saturate(160%);
+}
+
+/* 検索候補の文字 */
+.search-results button {
+  color: var(--map-glass-text) !important;
+  background: transparent !important;
+}
+
+/* 候補にマウスを乗せたとき */
+.search-results button:hover {
+  background: var(--map-glass-hover) !important;
+}
+
+/* 候補一覧内の補助テキスト */
+.search-results span {
+  color: var(--map-glass-muted) !important;
+}
