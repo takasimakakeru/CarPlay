@@ -1,341 +1,15 @@
+import React, { useEffect, useState } from "react";
 
-import React, { useEffect, useRef, useState } from "react";
-import * as maplibregl from "maplibre-gl";
-import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
-import "maplibre-gl/dist/maplibre-gl.css";
 import "./App.css";
 
-maplibregl.setWorkerUrl(workerUrl);
+import { apps } from "./data/apps";
 
-const apps = [
-  { name: "マップ", icon: "⌖", color: "#3985f7" },
-  { name: "ミュージック", icon: "♫", color: "#ed477e" },
-  { name: "電話", icon: "☎", color: "#32b96c" },
-  { name: "カレンダー", icon: "▦", color: "#e75c54" },
-  { name: "メッセージ", icon: "●", color: "#35b878" },
-  { name: "設定", icon: "⚙", color: "#777d89" },
-  { name: "天気", icon: "☀", color: "#e9a43b" },
-  { name: "写真", icon: "◈", color: "#9a70e8" },
-];
+import Sidebar from "./components/layout/Sidebar";
+import Footer from "./components/layout/Footer";
+import AppPlaceholder from "./components/apps/AppPlaceholder";
 
-const DEFAULT_MAP_CENTER = [139.7671, 35.6812];
-
-function MapPage() {
-  const mapRef = useRef(null);
-  const mapContainerRef = useRef(null);
-  const currentMarkerRef = useRef(null);
-
-  const [position, setPosition] = useState(null);
-  const [currentPosition, setCurrentPosition] = useState(null);
-  const [query, setQuery] = useState("");
-  const [results, setResults] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-
-  // 地図の初期化
-  useEffect(() => {
-    if (!mapContainerRef.current || mapRef.current) return;
-
-    const map = new maplibregl.Map({
-      container: mapContainerRef.current,
-      style: "https://tiles.openfreemap.org/styles/liberty",
-      center: DEFAULT_MAP_CENTER,
-      zoom: 12,
-    });
-
-    map.on("click", (event) => {
-      setPosition([event.lngLat.lng, event.lngLat.lat]);
-    });
-
-    mapRef.current = map;
-
-    return () => {
-      currentMarkerRef.current?.remove();
-      currentMarkerRef.current = null;
-      map.remove();
-      mapRef.current = null;
-    };
-  }, []);
-
-  // 現在地マーカー
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !currentPosition) return;
-
-    if (!currentMarkerRef.current) {
-      const markerElement = document.createElement("div");
-      markerElement.className = "current-location-marker";
-      markerElement.setAttribute("role", "img");
-      markerElement.setAttribute("aria-label", "現在地");
-
-      markerElement.innerHTML = `
-        <span class="current-location-pulse"></span>
-        <span class="current-location-core"></span>
-      `;
-
-      currentMarkerRef.current = new maplibregl.Marker({
-        element: markerElement,
-        anchor: "center",
-      })
-        .setLngLat(currentPosition)
-        .addTo(map);
-    } else {
-      currentMarkerRef.current.setLngLat(currentPosition);
-    }
-  }, [currentPosition]);
-
-  // 選択地点のマーカー
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !position) return;
-
-    map.flyTo({
-      center: position,
-      zoom: 15,
-      speed: 1.2,
-    });
-
-    const addSelectedPoint = () => {
-      const pointData = {
-        type: "Feature",
-        geometry: {
-          type: "Point",
-          coordinates: position,
-        },
-      };
-
-      if (!map.getSource("selected-point")) {
-        map.addSource("selected-point", {
-          type: "geojson",
-          data: pointData,
-        });
-
-        map.addLayer({
-          id: "selected-point",
-          type: "circle",
-          source: "selected-point",
-          paint: {
-            "circle-radius": 10,
-            "circle-color": "#3985f7",
-            "circle-stroke-width": 3,
-            "circle-stroke-color": "#ffffff",
-            "circle-blur": 0.1,
-          },
-        });
-      } else {
-        map.getSource("selected-point").setData(pointData);
-      }
-    };
-
-    if (map.isStyleLoaded()) {
-      addSelectedPoint();
-    } else {
-      map.once("load", addSelectedPoint);
-    }
-  }, [position]);
-
-  // 場所検索
-  async function searchPlace(event) {
-    event.preventDefault();
-
-    if (!query.trim()) return;
-
-    setLoading(true);
-    setError("");
-    setResults([]);
-
-    try {
-      const params = new URLSearchParams({
-        q: query.trim(),
-        format: "jsonv2",
-        limit: "5",
-      });
-
-      const response = await fetch(
-        `https://nominatim.openstreetmap.org/search?${params}`
-      );
-
-      if (!response.ok) {
-        throw new Error("検索サービスに接続できませんでした。");
-      }
-
-      const data = await response.json();
-
-      if (data.length === 0) {
-        setError("場所が見つかりませんでした。");
-        return;
-      }
-
-      setResults(data);
-    } catch (err) {
-      setError(err.message || "検索に失敗しました。");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  function selectResult(place) {
-    setPosition([Number(place.lon), Number(place.lat)]);
-    setResults([]);
-  }
-
-  // 現在地取得
-  function locateMe() {
-    setError("");
-
-    if (!navigator.geolocation) {
-      setError("このブラウザでは位置情報を利用できません。");
-      return;
-    }
-
-    navigator.geolocation.getCurrentPosition(
-      (result) => {
-        const coords = [
-          result.coords.longitude,
-          result.coords.latitude,
-        ];
-
-        setCurrentPosition(coords);
-
-        mapRef.current?.flyTo({
-          center: coords,
-          zoom: 16,
-          speed: 1.2,
-        });
-      },
-      () => {
-        setError("位置情報を取得できませんでした。");
-      },
-      {
-        enableHighAccuracy: true,
-        timeout: 10000,
-        maximumAge: 5000,
-      }
-    );
-  }
-
-  function zoomIn() {
-    mapRef.current?.zoomIn({ duration: 250 });
-  }
-
-  function zoomOut() {
-    mapRef.current?.zoomOut({ duration: 250 });
-  }
-
-  function resetNorth() {
-    mapRef.current?.resetNorth({ duration: 300 });
-  }
-
-  function recenterMap() {
-    const map = mapRef.current;
-    if (!map) return;
-
-    map.flyTo({
-      center: position || DEFAULT_MAP_CENTER,
-      zoom: 15,
-      speed: 1.2,
-    });
-  }
-
-  return (
-    <section className="map-page">
-      <div className="map-toolbar">
-        <form className="map-search" onSubmit={searchPlace}>
-          <span aria-hidden="true">⌕</span>
-
-          <input
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="場所や住所を検索..."
-            aria-label="場所や住所を検索"
-          />
-
-          <button type="submit" disabled={loading}>
-            {loading ? "検索中..." : "検索"}
-          </button>
-        </form>
-      </div>
-
-      {error && <div className="map-error">{error}</div>}
-
-      {results.length > 0 && (
-        <div className="search-results">
-          {results.map((place) => (
-            <button
-              key={place.place_id}
-              onClick={() => selectResult(place)}
-            >
-              <span aria-hidden="true">⌖</span>
-              <span>{place.display_name}</span>
-            </button>
-          ))}
-        </div>
-      )}
-
-      <div className="map-container">
-        <div ref={mapContainerRef} className="leaflet-map" />
-
-        <div className="map-controls">
-          <button onClick={zoomIn} title="拡大" aria-label="地図を拡大">
-            ＋
-          </button>
-
-          <button onClick={zoomOut} title="縮小" aria-label="地図を縮小">
-            −
-          </button>
-
-          <div className="map-control-divider" />
-
-          <button onClick={resetNorth} title="北向きに戻す" aria-label="北向きに戻す">
-            N
-          </button>
-
-          <button onClick={locateMe} title="現在地を取得" aria-label="現在地を取得">
-            ◎
-          </button>
-
-          <button onClick={recenterMap} title="選択地点へ戻る" aria-label="選択地点へ戻る">
-            ⌖
-          </button>
-        </div>
-
-        {position && (
-          <div className="map-location-card">
-            <div className="map-location-card-icon">⌖</div>
-
-            <div className="map-location-card-info">
-              <strong>選択地点</strong>
-              <span>
-                {position[1].toFixed(5)}, {position[0].toFixed(5)}
-              </span>
-            </div>
-
-            <button
-              onClick={() => setPosition(null)}
-              title="選択を解除"
-              aria-label="選択を解除"
-            >
-              ×
-            </button>
-          </div>
-        )}
-
-        <div className="map-hint">
-          地図をクリックして地点を選択
-        </div>
-      </div>
-
-      <div className="map-bottom">
-        <div>
-          <span className="map-status-dot" />
-          <span>MAP ONLINE</span>
-        </div>
-
-        <span>MAPLIBRE GL JS</span>
-      </div>
-    </section>
-  );
-}
+import Home from "./pages/Home";
+import MapApp from "./apps/map/MapPage";
 
 function App() {
   const [theme, setTheme] = useState("dark");
@@ -343,6 +17,7 @@ function App() {
   const [activeApp, setActiveApp] = useState(null);
   const [now, setNow] = useState(new Date());
 
+  // 時計
   useEffect(() => {
     const timer = setInterval(() => {
       setNow(new Date());
@@ -362,13 +37,17 @@ function App() {
     day: "2-digit",
   });
 
-  const selectedApp = apps.find((app) => app.name === activeApp);
+  const selectedApp = apps.find(
+    (app) => app.name === activeApp
+  );
 
+  // ページ切り替え
   function openPage(page) {
     setActivePage(page);
     setActiveApp(null);
   }
 
+  // アプリ起動
   function openApp(app) {
     if (app.name === "マップ") {
       openPage("マップ");
@@ -379,171 +58,37 @@ function App() {
 
   return (
     <main className={`dashboard ${theme}`}>
-      <aside className="sidebar">
-        <div className="brand">
-          <div className="clock">
-            <strong>{time}</strong>
-            <span>{date}</span>
-          </div>
-        </div>
-
-        <nav className="side-nav">
-          {[
-            { name: "ホーム", icon: "⌂" },
-            { name: "マップ", icon: "⌖" },
-            { name: "ミュージック", icon: "♫" },
-          ].map((item) => (
-            <button
-              key={item.name}
-              className={`nav-button ${
-                activePage === item.name ? "selected" : ""
-              }`}
-              onClick={() => openPage(item.name)}
-              aria-label={item.name}
-              title={item.name}
-            >
-              <span>{item.icon}</span>
-              <small>{item.name}</small>
-            </button>
-          ))}
-        </nav>
-
-        <div className="sidebar-bottom">
-          <button
-            className="nav-button"
-            onClick={() =>
-              setTheme((current) =>
-                current === "dark" ? "light" : "dark"
-              )
-            }
-            title="テーマ切り替え"
-            aria-label="テーマ切り替え"
-          >
-            <span>{theme === "dark" ? "☀" : "☾"}</span>
-            <small>テーマ</small>
-          </button>
-
-          <div className="connection-dot" title="オンライン" />
-        </div>
-      </aside>
+      <Sidebar
+        theme={theme}
+        setTheme={setTheme}
+        activePage={activePage}
+        onOpenPage={openPage}
+        time={time}
+        date={date}
+      />
 
       <section className="main-content">
         {activePage === "マップ" ? (
-          <MapPage />
+          <MapApp />
         ) : activeApp ? (
-          <section className="app-placeholder">
-            <button
-              className="back-button"
-              onClick={() => setActiveApp(null)}
-            >
-              ← ホームに戻る
-            </button>
-
-            <div
-              className="large-app-icon"
-              style={{ background: selectedApp?.color }}
-            >
-              {selectedApp?.icon}
-            </div>
-
-            <h1>{activeApp}</h1>
-            <p>このアプリの機能はこれから実装していくよ。</p>
-          </section>
+          <AppPlaceholder
+            app={selectedApp}
+            title={activeApp}
+            onBack={() => setActiveApp(null)}
+          />
         ) : activePage === "ホーム" ? (
-          <>
-            <section className="welcome" />
-
-            <section className="content-grid">
-              <div className="apps-panel">
-                <div className="section-heading">
-                  <h2>アプリ</h2>
-                  <span>ALL APPS</span>
-                </div>
-
-                <div className="app-grid">
-                  {apps.map((app) => (
-                    <button
-                      className="app-item"
-                      key={app.name}
-                      onClick={() => openApp(app)}
-                    >
-                      <span
-                        className="app-icon"
-                        style={{ background: app.color }}
-                      >
-                        {app.icon}
-                      </span>
-
-                      <span className="app-name">{app.name}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="right-panel">
-                <section className="widget music-widget">
-                  <div className="section-heading">
-                    <h2>再生中</h2>
-                    <span>NOW PLAYING</span>
-                  </div>
-
-                  <div className="music-content">
-                    <div className="album-art">♫</div>
-
-                    <div className="track-info">
-                      <strong>Music Player</strong>
-                      <span>お気に入りの音楽を再生</span>
-                    </div>
-                  </div>
-
-                  <div className="music-controls">
-                    <button aria-label="前の曲">◀◀</button>
-                    <button className="play-button" aria-label="再生">▶</button>
-                    <button aria-label="次の曲">▶▶</button>
-                  </div>
-
-                  <p className="music-note">
-                    ※ 音楽再生機能は今後追加予定
-                  </p>
-                </section>
-
-                <section className="widget weather-widget">
-                  <div className="section-heading">
-                    <h2>天気</h2>
-                    <span>WEATHER</span>
-                  </div>
-
-                  <div className="weather-content">
-                    <span className="weather-icon">☀</span>
-                    <div>
-                      <strong>--°</strong>
-                      <span>天気情報は未接続</span>
-                    </div>
-                  </div>
-                </section>
-              </div>
-            </section>
-          </>
+          <Home
+            apps={apps}
+            onOpenApp={openApp}
+          />
         ) : (
-          <section className="app-placeholder">
-            <button
-              className="back-button"
-              onClick={() => openPage("ホーム")}
-            >
-              ← ホームに戻る
-            </button>
-
-            <h1>{activePage}</h1>
-            <p>この画面はこれから実装していくよ。</p>
-          </section>
+          <AppPlaceholder
+            title={activePage}
+            onBack={() => openPage("ホーム")}
+          />
         )}
 
-        {activePage !== "マップ" && (
-          <footer className="footer">
-            <span>DRIVE SYSTEM</span>
-            <span>WEB INTERFACE · v0.2</span>
-          </footer>
-        )}
+        {activePage !== "マップ" && <Footer />}
       </section>
     </main>
   );
