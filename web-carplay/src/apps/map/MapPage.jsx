@@ -32,6 +32,7 @@ const [selectedEnd, setSelectedEnd] = useState(null);
 
 const [routeData, setRouteData] = useState(null);
 const [routeLoading, setRouteLoading] = useState(false);
+const [locatingStart, setLocatingStart] = useState(false);
 const [routeError, setRouteError] = useState("");
 
 const [routeSteps, setRouteSteps] = useState([]);
@@ -222,6 +223,61 @@ const routeEndMarkerRef = useRef(null);
       }
     );
   }
+
+
+function selectCurrentPositionAsStart() {
+  setRouteError("");
+
+  if (!navigator.geolocation) {
+    setRouteError("このブラウザでは位置情報を利用できません。");
+    return;
+  }
+
+  setLocatingStart(true);
+
+  navigator.geolocation.getCurrentPosition(
+    (result) => {
+      const coords = [
+        result.coords.longitude,
+        result.coords.latitude,
+      ];
+
+      const currentPlace = {
+        place_id: "current-location",
+        display_name: "現在地",
+        lon: String(coords[0]),
+        lat: String(coords[1]),
+      };
+
+      setCurrentPosition(coords);
+      setSelectedStart(currentPlace);
+      setStartQuery("現在地");
+      setStartCandidates([]);
+
+      setRouteData(null);
+      setRouteDetails(null);
+      setRouteSteps([]);
+
+      mapRef.current?.flyTo({
+        center: coords,
+        zoom: 16,
+        speed: 1.2,
+      });
+
+      setLocatingStart(false);
+    },
+    () => {
+      setRouteError("現在地を取得できませんでした。位置情報の許可を確認してください。");
+      setLocatingStart(false);
+    },
+    {
+      enableHighAccuracy: true,
+      timeout: 10000,
+      maximumAge: 5000,
+    }
+  );
+}
+
 
   function zoomIn() {
     mapRef.current?.zoomIn({ duration: 250 });
