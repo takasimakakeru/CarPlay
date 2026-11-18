@@ -7,6 +7,45 @@ let lastRequestTime = 0;
 
 const geocodeCache = new Map();
 
+// APIの応答を診断情報付きでJSONに変換
+async function readApiResponse(response, serviceName) {
+  const rawText = await response.text();
+
+  let data;
+
+  try {
+    data = JSON.parse(rawText);
+  } catch {
+    throw new Error(
+      `[${serviceName}]\n` +
+      `HTTPステータス: ${response.status}\n` +
+      `応答形式: JSONではありません\n` +
+      `応答本文: ${rawText.slice(0, 1200) || "(空)"}`
+    );
+  }
+
+  if (!response.ok) {
+    throw new Error(
+      `[${serviceName}]\n` +
+      `HTTPステータス: ${response.status}\n` +
+      `応答本文: ${rawText.slice(0, 1200) || "(空)"}`
+    );
+  }
+
+  return data;
+}
+
+// 通信自体が失敗した場合の診断情報
+function createNetworkError(serviceName, error) {
+  return new Error(
+    `[${serviceName}]\n` +
+    `通信に失敗しました。\n` +
+    `エラー名: ${error.name || "不明"}\n` +
+    `詳細: ${error.message || String(error)}\n` +
+    `CORS制限やネットワーク接続も確認してください。`
+  );
+}
+
 // 地名・住所から座標を検索
 export function searchNominatim(query, limit = 5) {
   const key = `${query.trim().toLowerCase()}_${limit}`;
@@ -34,15 +73,20 @@ export function searchNominatim(query, limit = 5) {
       "accept-language": "ja",
     });
 
-    const response = await fetch(
-      `${NOMINATIM_URL}?${params}`
-    );
+    let response;
 
-    if (!response.ok) {
-      throw new Error("場所の検索に失敗しました。");
-    }
+try {
+  response = await fetch(
+    `${NOMINATIM_URL}?${params}`
+  );
+} catch (error) {
+  throw createNetworkError("Nominatim", error);
+}
 
-    const data = await response.json();
+const data = await readApiResponse(
+  response,
+  "Nominatim"
+);
 
     geocodeCache.set(key, data);
 
@@ -210,31 +254,35 @@ export async function searchDrivingRoute(start, end) {
     language: "ja-JP",
   };
 
-  const response = await fetch(VALHALLA_URL, {
+  let response;
+
+try {
+  response = await fetch(VALHALLA_URL, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
     },
     body: JSON.stringify(requestBody),
   });
+} catch (error) {
+  throw createNetworkError("Valhalla", error);
+}
 
-  if (!response.ok) {
-    throw new Error(
-      "Valhallaのルート検索サービスに接続できませんでした。"
-    );
-  }
+const data = await readApiResponse(
+  response,
+  "Valhalla"
+);
 
-  const data = await response.json();
-
-  if (
-    data.status !== 0 ||
-    !data.trip?.legs?.length
-  ) {
-    throw new Error(
-      data.status_message ||
-      "この2地点間のルートが見つかりませんでした。"
-    );
-  }
+if (!data.trip?.legs?.length) {
+  throw new Error(
+    `[Valhalla ルート計算エラー]\n` +
+    `エラーコード: ${data.status ?? "不明"}\n` +
+    `メッセージ: ${data.status_message || "不明"}\n` +
+    `出発地座標: ${start.join(", ")}\n` +
+    `目的地座標: ${end.join(", ")}\n` +
+    `詳細: ${JSON.stringify(data).slice(0, 1200)}`
+  );
+}
 
   const trip = data.trip;
   const leg = trip.legs[0];
