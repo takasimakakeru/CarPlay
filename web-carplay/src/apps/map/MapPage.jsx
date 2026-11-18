@@ -24,7 +24,11 @@ function MapApp() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [startQuery, setStartQuery] = useState("");
-const [endQuery, setEndQuery] = useState("");
+  const [endQuery, setEndQuery] = useState("");
+const [startCandidates, setStartCandidates] = useState([]);
+const [endCandidates, setEndCandidates] = useState([]);
+const [selectedStart, setSelectedStart] = useState(null);
+const [selectedEnd, setSelectedEnd] = useState(null);
 
 const [routeData, setRouteData] = useState(null);
 const [routeLoading, setRouteLoading] = useState(false);
@@ -243,91 +247,157 @@ const routeEndMarkerRef = useRef(null);
   }
 
   //ルート案内
+// 出発地・目的地の候補を検索
 async function handleRouteSearch(event) {
-    event.preventDefault();
-  
-    if (!startQuery.trim() || !endQuery.trim()) {
-      setRouteError("出発地と目的地を入力してください。");
-      return;
-    }
-  
-    setRouteLoading(true);
-    setRouteError("");
-    setRouteData(null);
-    setRouteSteps([]);
-    setRouteDetails(null);
-  
-    try {
-      // 出発地を検索
-      const startResults = await searchNominatim(startQuery, 1);
-  
-      if (!startResults.length) {
-        throw new Error("出発地が見つかりませんでした。");
-      }
-  
-      // 目的地を検索
-      const endResults = await searchNominatim(endQuery, 1);
-  
-      if (!endResults.length) {
-        throw new Error("目的地が見つかりませんでした。");
-      }
-  
-      const start = [
-        Number(startResults[0].lon),
-        Number(startResults[0].lat),
-      ];
-  
-      const end = [
-        Number(endResults[0].lon),
-        Number(endResults[0].lat),
-      ];
-  
-      // OSRMで道路ルートを計算
-      const route = await searchDrivingRoute(start, end);
-  
-      setRouteData({
-        geometry: route.geometry,
-        start,
-        end,
-      });
-  
-      setRouteDetails({
-        distance: route.distance,
-        duration: route.duration,
-        startName: startResults[0].display_name,
-        endName: endResults[0].display_name,
-      });
-  
-      const steps = route.legs[0].steps.map((step) => ({
-        name: step.name || "名称のない道路",
-        distance: step.distance,
-        type: step.maneuver.type,
-        modifier: step.maneuver.modifier,
-      }));
-  
-      setRouteSteps(steps);
-    } catch (err) {
-      setRouteError(
-        err.message || "ルート検索に失敗しました。"
-      );
-    } finally {
-      setRouteLoading(false);
-    }
-  }
-  
-  function clearRoute() {
-    setRouteData(null);
-    setRouteDetails(null);
-    setRouteSteps([]);
-    setRouteError("");
-  
-    routeStartMarkerRef.current?.remove();
-    routeEndMarkerRef.current?.remove();
-  
-    routeStartMarkerRef.current = null;
-    routeEndMarkerRef.current = null;
-  }  
+  event.preventDefault();
 
+  if (!startQuery.trim() || !endQuery.trim()) {
+    setRouteError("出発地と目的地を入力してください。");
+    return;
+  }
+
+  setRouteLoading(true);
+  setRouteError("");
+
+  setRouteData(null);
+  setRouteSteps([]);
+  setRouteDetails(null);
+
+  setStartCandidates([]);
+  setEndCandidates([]);
+  setSelectedStart(null);
+  setSelectedEnd(null);
+
+  try {
+    // 出発地の候補を最大5件取得
+    const startResults = await searchNominatim(
+      startQuery,
+      5
+    );
+
+    // 目的地の候補を最大5件取得
+    const endResults = await searchNominatim(
+      endQuery,
+      5
+    );
+
+    setStartCandidates(startResults);
+    setEndCandidates(endResults);
+
+    if (!startResults.length || !endResults.length) {
+      throw new Error(
+        !startResults.length
+          ? "出発地が見つかりませんでした。"
+          : "目的地が見つかりませんでした。"
+      );
+    }
+  } catch (err) {
+    setRouteError(
+      err.message || "場所の検索に失敗しました。"
+    );
+  } finally {
+    setRouteLoading(false);
+  }
+}
+
+// 出発地の候補を選択
+function selectStartCandidate(place) {
+  setSelectedStart(place);
+  setRouteError("");
+  setRouteData(null);
+  setRouteDetails(null);
+  setRouteSteps([]);
+}
+
+// 目的地の候補を選択
+function selectEndCandidate(place) {
+  setSelectedEnd(place);
+  setRouteError("");
+  setRouteData(null);
+  setRouteDetails(null);
+  setRouteSteps([]);
+}
+
+// 選択した候補からルートを計算
+async function calculateSelectedRoute() {
+  if (!selectedStart || !selectedEnd) {
+    setRouteError("出発地と目的地を選択してください。");
+    return;
+  }
+
+  setRouteLoading(true);
+  setRouteError("");
+  setRouteData(null);
+  setRouteSteps([]);
+  setRouteDetails(null);
+
+  try {
+    const start = [
+      Number(selectedStart.lon),
+      Number(selectedStart.lat),
+    ];
+
+    const end = [
+      Number(selectedEnd.lon),
+      Number(selectedEnd.lat),
+    ];
+
+    const route = await searchDrivingRoute(start, end);
+
+    setRouteData({
+      geometry: route.geometry,
+      start,
+      end,
+    });
+
+    setRouteDetails({
+      distance: route.distance,
+      duration: route.duration,
+      startName: selectedStart.display_name,
+      endName: selectedEnd.display_name,
+    });
+
+    // mapServices.js の返却形式に合わせる
+    const steps = route.legs[0].steps.map((step) => ({
+      name: step.name || "名称のない道路",
+      distance: step.distance,
+      type: step.type,
+      modifier: step.modifier,
+      instruction: step.instruction || "",
+    }));
+
+    setRouteSteps(steps);
+  } catch (err) {
+    setRouteError(
+      err.message || "ルート検索に失敗しました。"
+    );
+  } finally {
+    setRouteLoading(false);
+  }
+} 
+  
+function clearRoute() {
+  // ルート情報を消去
+  setRouteData(null);
+  setRouteDetails(null);
+  setRouteSteps([]);
+  setRouteError("");
+
+  // 出発地・目的地の候補一覧を消去
+  setStartCandidates([]);
+  setEndCandidates([]);
+
+  // 選択済み候補を解除
+  setSelectedStart(null);
+  setSelectedEnd(null);
+
+  // 地図上のマーカーを削除
+  routeStartMarkerRef.current?.remove();
+  routeEndMarkerRef.current?.remove();
+
+  routeStartMarkerRef.current = null;
+  routeEndMarkerRef.current = null;
+}
 
 useEffect(() => {
     const map = mapRef.current;
@@ -478,11 +548,19 @@ useEffect(() => {
       <span className="route-end-dot" />
 
       <input
-        value={endQuery}
-        onChange={(event) => setEndQuery(event.target.value)}
-        placeholder="目的地を入力..."
-        aria-label="目的地"
-      />
+  value={endQuery}
+  onChange={(event) => {
+    setEndQuery(event.target.value);
+    setEndCandidates([]);
+    setSelectedEnd(null);
+    setRouteData(null);
+    setRouteDetails(null);
+    setRouteSteps([]);
+    setRouteError("");
+  }}
+  placeholder="目的地を入力..."
+  aria-label="目的地"
+/>
     </div>
 
     <button
@@ -493,6 +571,68 @@ useEffect(() => {
       {routeLoading ? "ルート検索中..." : "ルートを検索"}
     </button>
   </form>
+
+  {/* 出発地の候補 */}
+{startCandidates.length > 0 && (
+  <div className="route-candidates">
+    <strong>出発地の候補を選択</strong>
+
+    {startCandidates.map((place) => (
+      <button
+        type="button"
+        key={place.place_id}
+        className={
+          selectedStart?.place_id === place.place_id
+            ? "route-candidate selected"
+            : "route-candidate"
+        }
+        onClick={() => selectStartCandidate(place)}
+      >
+        <span>{place.display_name}</span>
+        {selectedStart?.place_id === place.place_id && (
+          <span>選択済み ✓</span>
+        )}
+      </button>
+    ))}
+  </div>
+)}
+
+{/* 目的地の候補 */}
+{endCandidates.length > 0 && (
+  <div className="route-candidates">
+    <strong>目的地の候補を選択</strong>
+
+    {endCandidates.map((place) => (
+      <button
+        type="button"
+        key={place.place_id}
+        className={
+          selectedEnd?.place_id === place.place_id
+            ? "route-candidate selected"
+            : "route-candidate"
+        }
+        onClick={() => selectEndCandidate(place)}
+      >
+        <span>{place.display_name}</span>
+        {selectedEnd?.place_id === place.place_id && (
+          <span>選択済み ✓</span>
+        )}
+      </button>
+    ))}
+  </div>
+)}
+
+{/* 両方選択されたらルート計算ボタンを表示 */}
+{selectedStart && selectedEnd && (
+  <button
+    type="button"
+    className="route-search-button"
+    onClick={calculateSelectedRoute}
+    disabled={routeLoading}
+  >
+    {routeLoading ? "候補を検索中..." : "場所の候補を検索"}
+  </button>
+)}
 
   {routeError && (
     <p className="route-error">{routeError}</p>
