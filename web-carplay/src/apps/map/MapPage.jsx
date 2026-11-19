@@ -594,11 +594,30 @@ useEffect(() => {
 
       <input
         value={startQuery}
-        onChange={(event) => setStartQuery(event.target.value)}
+        onChange={(event) => {
+          setStartQuery(event.target.value);
+          setStartCandidates([]);
+          setSelectedStart(null);
+          setRouteData(null);
+          setRouteDetails(null);
+          setRouteSteps([]);
+          setRouteError("");
+        }}
         placeholder="出発地を入力..."
         aria-label="出発地"
       />
-    </div>
+    </div>    
+
+    <button
+  type="button"
+  className="route-search-button"
+  onClick={selectCurrentPositionAsStart}
+  disabled={locatingStart}
+>
+  {locatingStart
+    ? "現在地を取得中..."
+    : "◎ 現在地を出発地にする"}
+</button>
 
     <div className="route-input-group">
       <span className="route-end-dot" />
