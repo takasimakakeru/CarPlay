@@ -251,7 +251,7 @@ function selectCurrentPositionAsStart() {
 
       setCurrentPosition(coords);
       setSelectedStart(currentPlace);
-      setStartQuery("現在地");
+      setStartQuery("");
       setStartCandidates([]);
 
       setRouteData(null);
@@ -307,8 +307,12 @@ function selectCurrentPositionAsStart() {
 async function handleRouteSearch(event) {
   event.preventDefault();
 
-  if (!startQuery.trim() || !endQuery.trim()) {
-    setRouteError("出発地と目的地を入力してください。");
+  // GPSで選択済みなら検索欄が空でも出発地として認める
+  const hasStart = selectedStart || startQuery.trim();
+  const hasEnd = selectedEnd || endQuery.trim();
+
+  if (!hasStart || !hasEnd) {
+    setRouteError("出発地と目的地を選択してください。");
     return;
   }
 
@@ -321,21 +325,19 @@ async function handleRouteSearch(event) {
 
   setStartCandidates([]);
   setEndCandidates([]);
-  setSelectedStart(null);
-  setSelectedEnd(null);
 
   try {
-    // 出発地の候補を最大5件取得
-    const startResults = await searchNominatim(
-      startQuery,
-      5
-    );
+    let startResults = selectedStart ? [selectedStart] : [];
+    let endResults = selectedEnd ? [selectedEnd] : [];
 
-    // 目的地の候補を最大5件取得
-    const endResults = await searchNominatim(
-      endQuery,
-      5
-    );
+    // 手動入力の場合だけ場所検索を行う
+    if (!selectedStart) {
+      startResults = await searchNominatim(startQuery, 5);
+    }
+
+    if (!selectedEnd) {
+      endResults = await searchNominatim(endQuery, 5);
+    }
 
     setStartCandidates(startResults);
     setEndCandidates(endResults);
