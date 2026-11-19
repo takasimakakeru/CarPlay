@@ -12,6 +12,71 @@ maplibregl.setWorkerUrl(workerUrl);
 
 const DEFAULT_MAP_CENTER = [139.7671, 35.6812];
 
+// 2地点間の距離をメートルで計算
+function getDistanceBetweenPoints(a, b) {
+  const toRad = (value) => (value * Math.PI) / 180;
+
+  const lat1 = toRad(a[1]);
+  const lat2 = toRad(b[1]);
+
+  const deltaLat = toRad(b[1] - a[1]);
+  const deltaLon = toRad(b[0] - a[0]);
+
+  const value =
+    Math.sin(deltaLat / 2) ** 2 +
+    Math.cos(lat1) *
+      Math.cos(lat2) *
+      Math.sin(deltaLon / 2) ** 2;
+
+  return 6371000 * 2 *
+    Math.atan2(
+      Math.sqrt(value),
+      Math.sqrt(1 - value)
+    );
+}
+
+// 現在地に最も近いルート座標を探す
+function findNearestRouteIndex(position, coordinates) {
+  let nearestIndex = 0;
+  let nearestDistance = Infinity;
+
+  coordinates.forEach((coordinate, index) => {
+    const distance = getDistanceBetweenPoints(
+      position,
+      coordinate
+    );
+
+    if (distance < nearestDistance) {
+      nearestDistance = distance;
+      nearestIndex = index;
+    }
+  });
+
+  return nearestIndex;
+}
+
+// 現在地から次の案内地点までのルート距離
+function getDistanceAlongRoute(
+  coordinates,
+  startIndex,
+  endIndex
+) {
+  let distance = 0;
+
+  for (
+    let i = startIndex;
+    i < endIndex && i < coordinates.length - 1;
+    i++
+  ) {
+    distance += getDistanceBetweenPoints(
+      coordinates[i],
+      coordinates[i + 1]
+    );
+  }
+
+  return distance;
+}
+
 function MapApp() {
   const mapRef = useRef(null);
   const mapContainerRef = useRef(null);
@@ -39,6 +104,12 @@ const [routeSteps, setRouteSteps] = useState([]);
 const [routeDetails, setRouteDetails] = useState(null);
 
 const [isNavigating, setIsNavigating] = useState(false);
+
+const [navigationStepIndex, setNavigationStepIndex] =
+  useState(0);
+
+const [navigationDistance, setNavigationDistance] =
+  useState(0);
 
 const routeStartMarkerRef = useRef(null);
 const routeEndMarkerRef = useRef(null);
@@ -424,7 +495,12 @@ async function calculateSelectedRoute() {
       type: step.type,
       modifier: step.modifier,
       instruction: step.instruction || "",
+    
+      beginShapeIndex: step.beginShapeIndex,
+      endShapeIndex: step.endShapeIndex,
     }));
+    
+    setRouteSteps(steps);
 
     setRouteSteps(steps);
   } catch (err) {
@@ -582,6 +658,16 @@ useEffect(() => {
       return;
     }
   
+    const firstStep = routeSteps.findIndex(
+      (step) => step.type !== "depart"
+    );
+  
+    setNavigationStepIndex(
+      firstStep >= 0 ? firstStep : 0
+    );
+  
+    setNavigationDistance(0);
+    setRouteError("");
     setIsNavigating(true);
   };
   
@@ -589,8 +675,95 @@ useEffect(() => {
     setIsNavigating(false);
   };
 
-  const navigationStep =
-  routeSteps.find((step) => step.type !== "depart") || null;
+  // ナビ中の現在地追従と案内更新
+useEffect(() => {
+  if (!isNavigating || !routeData) return;
+
+  if (!navigator.geolocation) {
+    setRouteError(
+      "このブラウザでは位置情報を利用できません。"
+    );
+    setIsNavigating(false);
+    return;
+  }
+
+  const coordinates = routeData.geometry.coordinates;
+
+  const watchId = navigator.geolocation.watchPosition(
+    (result) => {
+      const currentCoords = [
+        result.coords.longitude,
+        result.coords.latitude,
+      ];
+
+      // 現在地マーカーを更新
+      setCurrentPosition(currentCoords);
+
+      // 地図を現在地に追従させる
+      mapRef.current?.easeTo({
+        center: currentCoords,
+        duration: 500,
+      });
+
+      // ルート上の現在位置を判定
+      const nearestIndex = findNearestRouteIndex(
+        currentCoords,
+        coordinates
+      );
+
+      // 現在地より先にある次の案内を探す
+      let nextIndex = routeSteps.findIndex(
+        (step) =>
+          step.type !== "depart" &&
+          Number.isFinite(step.beginShapeIndex) &&
+          step.beginShapeIndex >= nearestIndex
+      );
+
+      // 該当する案内がなければ最後の案内を使う
+      if (nextIndex === -1) {
+        nextIndex = routeSteps.length - 1;
+      }
+
+      setNavigationStepIndex(nextIndex);
+
+      // 次の案内地点までの距離を計算
+      const targetIndex =
+        routeSteps[nextIndex]?.beginShapeIndex;
+
+      if (Number.isFinite(targetIndex)) {
+        setNavigationDistance(
+          getDistanceAlongRoute(
+            coordinates,
+            nearestIndex,
+            targetIndex
+          )
+        );
+      }
+    },
+
+    (error) => {
+      setRouteError(
+        `現在地を継続取得できませんでした。${error.message || ""}`
+      );
+
+      setIsNavigating(false);
+    },
+
+    {
+      enableHighAccuracy: true,
+      timeout: 15000,
+      maximumAge: 1000,
+    }
+  );
+
+  // ナビ終了時にGPS監視を解除
+  return () => {
+    navigator.geolocation.clearWatch(watchId);
+  };
+}, [isNavigating, routeData, routeSteps]);
+
+const navigationStep =
+routeSteps[navigationStepIndex] || null;
 
   return (
     <section className={`map-page${isNavigating ? " navigating" : ""}`}>
@@ -882,9 +1055,9 @@ useEffect(() => {
 
           <div className="navigation-step-distance">
             次の案内まで：
-            {navigationStep.distance >= 1000
-              ? `${(navigationStep.distance / 1000).toFixed(1)} km`
-              : `${Math.round(navigationStep.distance)} m`}
+            {navigationDistance >= 1000
+  ? `${(navigationDistance / 1000).toFixed(1)} km`
+  : `${Math.round(navigationDistance)} m`}
           </div>
         </>
         ) : (

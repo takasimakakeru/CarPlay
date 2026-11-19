@@ -230,8 +230,11 @@ function normalizeManeuvers(maneuvers) {
       type: normalized.type,
       modifier: normalized.modifier,
 
-      // Valhallaが生成した日本語の案内文
       instruction: maneuver.instruction || "",
+
+      // ルート形状上の案内開始・終了位置
+      beginShapeIndex: maneuver.begin_shape_index,
+      endShapeIndex: maneuver.end_shape_index,
     };
   });
 }
