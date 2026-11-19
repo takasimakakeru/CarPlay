@@ -250,7 +250,7 @@
   padding: 12px;
   border: 1px solid var(--map-glass-border);
   border-radius: 13px;
-  background: rgba(15, 23, 42, 0.28);
+  background: var(--map-glass-bg);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
 }
@@ -330,5 +330,165 @@
   .route-candidate {
     min-height: 52px;
     padding: 10px;
+  }
+}
+
+
+/* =====================================================
+   NAVIGATION SCREEN
+===================================================== */
+
+.navigation-start-button {
+  width: 100%;
+  margin-top: 14px;
+  padding: 13px;
+  border: none;
+  border-radius: 12px;
+  background: #3985f7;
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.navigation-start-button:hover {
+  background: #286acb;
+}
+
+/* ナビ画面 */
+
+.navigation-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 18px;
+  pointer-events: none;
+}
+
+.navigation-top-panel,
+.navigation-bottom-panel {
+  width: min(480px, 100%);
+  padding: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 18px;
+  background: rgba(20, 27, 38, 0.88);
+  color: #ffffff;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.3);
+  -webkit-backdrop-filter: blur(18px);
+  backdrop-filter: blur(18px);
+  pointer-events: auto;
+}
+
+.navigation-status {
+  display: block;
+  margin-bottom: 8px;
+  color: #75aaff;
+  font-size: 10px;
+  letter-spacing: 2px;
+}
+
+.navigation-top-panel > strong {
+  font-size: 14px;
+}
+
+.navigation-instruction {
+  margin-top: 16px;
+  font-size: clamp(20px, 3vw, 30px);
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.navigation-road-name {
+  margin-top: 10px;
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 14px;
+}
+
+.navigation-step-distance {
+  margin-top: 8px;
+  color: #75aaff;
+  font-size: 13px;
+}
+
+.navigation-bottom-panel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 15px;
+  width: 100%;
+}
+
+.navigation-bottom-panel > div {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.navigation-bottom-panel span {
+  color: rgba(255, 255, 255, 0.65);
+  font-size: 11px;
+}
+
+.navigation-bottom-panel strong {
+  font-size: 14px;
+}
+
+.navigation-bottom-panel > div:first-child strong {
+  overflow-wrap: anywhere;
+}
+
+.navigation-trip-info {
+  flex-shrink: 0;
+}
+
+.navigation-bottom-panel button {
+  flex-shrink: 0;
+  padding: 11px 15px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 10px;
+  background: #d94b4b;
+  color: #ffffff;
+  font-weight: 700;
+}
+
+/* ナビ中は通常の検索・操作パネルを隠す */
+
+.map-page.navigating .route-planner,
+.map-page.navigating .map-toolbar,
+.map-page.navigating .map-controls,
+.map-page.navigating .map-hint,
+.map-page.navigating .map-location-card,
+.map-page.navigating .map-bottom,
+.map-page.navigating .map-error,
+.map-page.navigating .search-results {
+  display: none;
+}
+
+/* スマートフォン */
+
+@media (max-width: 560px) {
+  .navigation-overlay {
+    padding: 12px;
+  }
+
+  .navigation-top-panel,
+  .navigation-bottom-panel {
+    padding: 15px;
+    border-radius: 15px;
+  }
+
+  .navigation-instruction {
+    font-size: 23px;
+  }
+
+  .navigation-bottom-panel {
+    flex-wrap: wrap;
+  }
+
+  .navigation-bottom-panel > div:first-child {
+    flex: 1 1 100%;
   }
 }

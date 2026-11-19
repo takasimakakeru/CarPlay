@@ -38,6 +38,8 @@ const [routeError, setRouteError] = useState("");
 const [routeSteps, setRouteSteps] = useState([]);
 const [routeDetails, setRouteDetails] = useState(null);
 
+const [isNavigating, setIsNavigating] = useState(false);
+
 const routeStartMarkerRef = useRef(null);
 const routeEndMarkerRef = useRef(null);
 
@@ -251,7 +253,7 @@ function selectCurrentPositionAsStart() {
 
       setCurrentPosition(coords);
       setSelectedStart(currentPlace);
-      setStartQuery("");
+      setStartQuery("現在地");
       setStartCandidates([]);
 
       setRouteData(null);
@@ -437,6 +439,7 @@ async function calculateSelectedRoute() {
 function clearRoute() {
   // ルート情報を消去
   setRouteData(null);
+  setIsNavigating(false);
   setRouteDetails(null);
   setRouteSteps([]);
   setRouteError("");
@@ -573,8 +576,24 @@ useEffect(() => {
     };
   }, [routeData]);  
 
+  const startNavigation = () => {
+    if (!routeData || !routeSteps.length) {
+      setRouteError("先にルートを計算してください。");
+      return;
+    }
+  
+    setIsNavigating(truae);
+  };
+  
+  const stopNavigation = () => {
+    setIsNavigating(false);
+  };
+
+  const navigationStep =
+  routeSteps.find((step) => step.type !== "depart") || null;
+
   return (
-    <section className="map-page">
+    <section className={`map-page${isNavigating ? " navigating" : ""}`}>
 
 <div className="route-planner">
   <div className="route-planner-heading">
@@ -707,7 +726,7 @@ useEffect(() => {
     onClick={calculateSelectedRoute}
     disabled={routeLoading}
   >
-    {routeLoading ? "候補を検索中..." : "場所の候補を検索"}
+    {routeLoading ? "ルート計算中..." : "ルートを計算"}
   </button>
 )}
 
@@ -737,6 +756,14 @@ useEffect(() => {
         <span>出発：{routeDetails.startName}</span>
         <span>到着：{routeDetails.endName}</span>
       </div>
+
+      <button
+  type="button"
+  className="navigation-start-button"
+  onClick={startNavigation}
+>
+  ▶ ナビを開始
+</button>
 
       <div className="route-directions">
         <strong>ルート案内</strong>
@@ -836,6 +863,61 @@ useEffect(() => {
 
       <div className="map-container">
         <div ref={mapContainerRef} className="leaflet-map" />
+
+        {isNavigating && (
+  <div className="navigation-overlay">
+    <div className="navigation-top-panel">
+      <span className="navigation-status">NAVIGATION</span>
+      <strong>ナビゲーション中</strong>
+
+      {navigationStep ? (
+        <>
+          <div className="navigation-instruction">
+            {navigationStep.instruction || "案内を確認してください"}
+          </div>
+
+          <div className="navigation-road-name">
+            {navigationStep.name}
+          </div>
+
+          <div className="navigation-step-distance">
+            次の案内まで：
+            {navigationStep.distance >= 1000
+              ? `${(navigationStep.distance / 1000).toFixed(1)} km`
+              : `${Math.round(navigationStep.distance)} m`}
+          </div>
+        </>
+      ) : (
+        <div className="navigation-instruction">
+          案内情報がありません
+        </div>
+      )}
+    </div>
+
+    <div className="navigation-bottom-panel">
+      <div>
+        <span>目的地</span>
+        <strong>{routeDetails?.endName || "未設定"}</strong>
+      </div>
+
+      <div className="navigation-trip-info">
+        <strong>
+          {routeDetails
+            ? `${Math.ceil(routeDetails.duration / 60)} 分`
+            : "--"}
+        </strong>
+        <span>当初の推定所要時間</span>
+      </div>
+
+      <button
+        type="button"
+        onClick={stopNavigation}
+      >
+        ナビを終了
+      </button>
+    </div>
+  </div>
+)}
 
         <div className="map-controls">
           <button onClick={zoomIn} title="拡大" aria-label="地図を拡大">
