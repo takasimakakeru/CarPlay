@@ -371,11 +371,11 @@
 .navigation-bottom-panel {
   width: min(480px, 100%);
   padding: 20px;
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  border: 1px solid var(--map-glass-border);
   border-radius: 18px;
-  background: rgba(20, 27, 38, 0.88);
-  color: #ffffff;
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.3);
+  background: var(--map-glass-bg);
+  color: var(--map-glass-text);
+  box-shadow: 0 8px 28px var(--map-glass-shadow);
   -webkit-backdrop-filter: blur(18px);
   backdrop-filter: blur(18px);
   pointer-events: auto;

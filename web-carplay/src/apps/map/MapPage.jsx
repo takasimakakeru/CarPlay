@@ -582,7 +582,7 @@ useEffect(() => {
       return;
     }
   
-    setIsNavigating(truae);
+    setIsNavigating(true);
   };
   
   const stopNavigation = () => {
@@ -865,12 +865,12 @@ useEffect(() => {
         <div ref={mapContainerRef} className="leaflet-map" />
 
         {isNavigating && (
-  <div className="navigation-overlay">
-    <div className="navigation-top-panel">
-      <span className="navigation-status">NAVIGATION</span>
-      <strong>ナビゲーション中</strong>
+        <div className="navigation-overlay">
+        <div className="navigation-top-panel">
+        <span className="navigation-status">NAVIGATION</span>
+        <strong>ナビゲーション中</strong>
 
-      {navigationStep ? (
+        {navigationStep ? (
         <>
           <div className="navigation-instruction">
             {navigationStep.instruction || "案内を確認してください"}
@@ -887,18 +887,18 @@ useEffect(() => {
               : `${Math.round(navigationStep.distance)} m`}
           </div>
         </>
-      ) : (
-        <div className="navigation-instruction">
-          案内情報がありません
-        </div>
-      )}
-    </div>
+        ) : (
+          <div className="navigation-instruction">
+            案内情報がありません
+          </div>
+       )}
+      </div>
 
-    <div className="navigation-bottom-panel">
-      <div>
+      <div className="navigation-bottom-panel">
+        <div>
         <span>目的地</span>
         <strong>{routeDetails?.endName || "未設定"}</strong>
-      </div>
+        </div>
 
       <div className="navigation-trip-info">
         <strong>
