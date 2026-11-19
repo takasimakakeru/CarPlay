@@ -12,6 +12,54 @@ maplibregl.setWorkerUrl(workerUrl);
 
 const DEFAULT_MAP_CENTER = [139.7671, 35.6812];
 
+// 推定到着時刻を HH:mm 形式に変換
+function formatArrivalTime(timestamp) {
+  if (!timestamp) return "--:--";
+
+  return new Date(timestamp).toLocaleTimeString("ja-JP", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  });
+}
+
+// 案内種別ごとの表示情報
+const MANEUVER_DISPLAY = {
+  depart: { label: "出発", icon: "●" },
+  arrive: { label: "到着", icon: "⚑" },
+  turn: { label: "方向転換", icon: "↱" },
+  continue: { label: "直進", icon: "↑" },
+  merge: { label: "合流", icon: "⇢" },
+  fork: { label: "分岐", icon: "⑂" },
+  roundabout: { label: "ロータリー", icon: "⟳" },
+  "end of road": { label: "突き当たり", icon: "↰" },
+  "new name": { label: "道路変更", icon: "↑" },
+  notification: { label: "案内", icon: "ⓘ" },
+};
+
+const MODIFIER_LABELS = {
+  left: "左折",
+  right: "右折",
+  straight: "直進",
+  "slight left": "やや左",
+  "slight right": "やや右",
+  "sharp left": "大きく左",
+  "sharp right": "大きく右",
+  uturn: "Uターン",
+};
+
+function getManeuverDisplay(step) {
+  const base = MANEUVER_DISPLAY[step.type] || {
+    label: "進行",
+    icon: "➜",
+  };
+
+  return {
+    ...base,
+    label: MODIFIER_LABELS[step.modifier] || base.label,
+  };
+}
+
 // 2地点間の距離をメートルで計算
 function getDistanceBetweenPoints(a, b) {
   const toRad = (value) => (value * Math.PI) / 180;
@@ -486,6 +534,9 @@ async function calculateSelectedRoute() {
       duration: route.duration,
       startName: selectedStart.display_name,
       endName: selectedEnd.display_name,
+    
+      // 現時点での推定到着時刻
+      estimatedArrival: Date.now() + route.duration * 1000,
     });
 
     // mapServices.js の返却形式に合わせる
@@ -499,8 +550,6 @@ async function calculateSelectedRoute() {
       beginShapeIndex: step.beginShapeIndex,
       endShapeIndex: step.endShapeIndex,
     }));
-    
-    setRouteSteps(steps);
 
     setRouteSteps(steps);
   } catch (err) {
@@ -667,8 +716,20 @@ useEffect(() => {
     );
   
     setNavigationDistance(0);
-    setRouteError("");
-    setIsNavigating(true);
+
+// ナビ開始時点の時刻を基準に到着予定を再計算
+setRouteDetails((current) =>
+  current
+    ? {
+        ...current,
+        estimatedArrival:
+          Date.now() + current.duration * 1000,
+      }
+    : current
+);
+
+setRouteError("");
+setIsNavigating(true);
   };
   
   const stopNavigation = () => {
@@ -764,6 +825,12 @@ useEffect(() => {
 
 const navigationStep =
 routeSteps[navigationStepIndex] || null;
+
+// その次の案内を取得（出発ステップは除外）
+const followingNavigationStep =
+  routeSteps
+    .slice(navigationStepIndex + 1)
+    .find((step) => step.type !== "depart") || null;
 
   return (
     <section className={`map-page${isNavigating ? " navigating" : ""}`}>
@@ -926,9 +993,12 @@ routeSteps[navigationStepIndex] || null;
       </div>
 
       <div className="route-summary-address">
-        <span>出発：{routeDetails.startName}</span>
-        <span>到着：{routeDetails.endName}</span>
-      </div>
+  <span>出発：{routeDetails.startName}</span>
+  <span>到着：{routeDetails.endName}</span>
+  <span>
+    到着予定：{formatArrivalTime(routeDetails.estimatedArrival)}
+  </span>
+</div>
 
       <button
   type="button"
@@ -942,60 +1012,45 @@ routeSteps[navigationStepIndex] || null;
         <strong>ルート案内</strong>
 
         {routeSteps.map((step, index) => {
-          const maneuverLabels = {
-            depart: "出発",
-            arrive: "到着",
-            turn: "曲がる",
-            continue: "直進",
-            merge: "合流",
-            fork: "分岐",
-            roundabout: "ロータリー",
-            "end of road": "突き当たり",
-            "new name": "道路変更",
-            notification: "案内",
-          };
+  const display = getManeuverDisplay(step);
 
-          const modifierLabels = {
-            left: "左折",
-            right: "右折",
-            straight: "直進",
-            "slight left": "やや左",
-            "slight right": "やや右",
-            "sharp left": "大きく左",
-            "sharp right": "大きく右",
-            uturn: "Uターン",
-          };
+  return (
+    <div
+  className={
+    index === navigationStepIndex
+      ? "route-step active"
+      : "route-step"
+  }
+  key={index}
+>
+      <span className="route-step-icon">
+        {display.icon}
+      </span>
 
-          const instruction =
-            modifierLabels[step.modifier] ||
-            maneuverLabels[step.type] ||
-            "進む";
+      <div>
+        <strong>
+          {step.type === "depart"
+            ? "出発"
+            : step.type === "arrive"
+            ? "目的地に到着"
+            : display.label}
+        </strong>
 
-          return (
-            <div className="route-step" key={index}>
-              <span className="route-step-icon">
-                {step.type === "arrive" ? "⚑" : "➜"}
-              </span>
+        <span>{step.name}</span>
 
-              <div>
-                <strong>
-                  {step.type === "depart"
-                    ? "出発"
-                    : step.type === "arrive"
-                    ? "目的地に到着"
-                    : instruction}
-                </strong>
+        {step.instruction && (
+          <span>{step.instruction}</span>
+        )}
 
-                <span>{step.name}</span>
-                <small>
-                  {step.distance >= 1000
-                    ? `${(step.distance / 1000).toFixed(1)} km`
-                    : `${Math.round(step.distance)} m`}
-                </small>
-              </div>
-            </div>
-          );
-        })}
+        <small>
+          {step.distance >= 1000
+            ? `${(step.distance / 1000).toFixed(1)} km`
+            : `${Math.round(step.distance)} m`}
+        </small>
+      </div>
+    </div>
+  );
+})}
       </div>
     </div>
   )}
@@ -1043,28 +1098,49 @@ routeSteps[navigationStepIndex] || null;
         <span className="navigation-status">NAVIGATION</span>
         <strong>ナビゲーション中</strong>
 
-        {navigationStep ? (
-        <>
-          <div className="navigation-instruction">
-            {navigationStep.instruction || "案内を確認してください"}
-          </div>
+        
+{navigationStep ? (
+  <>
+    <div className="navigation-current-label">
+      次の案内
+    </div>
 
-          <div className="navigation-road-name">
-            {navigationStep.name}
-          </div>
+    <div className="navigation-instruction">
+      {navigationStep.instruction || "案内を確認してください"}
+    </div>
 
-          <div className="navigation-step-distance">
-            次の案内まで：
-            {navigationDistance >= 1000
-  ? `${(navigationDistance / 1000).toFixed(1)} km`
-  : `${Math.round(navigationDistance)} m`}
-          </div>
-        </>
-        ) : (
-          <div className="navigation-instruction">
-            案内情報がありません
-          </div>
-       )}
+    <div className="navigation-road-name">
+      {navigationStep.name}
+    </div>
+
+    <div className="navigation-step-distance">
+      次の案内まで：
+      {navigationDistance >= 1000
+        ? `${(navigationDistance / 1000).toFixed(1)} km`
+        : `${Math.round(navigationDistance)} m`}
+    </div>
+
+    {followingNavigationStep && (
+      <div className="navigation-following">
+        <span>その次の案内</span>
+
+        <strong>
+          {followingNavigationStep.instruction ||
+            getManeuverDisplay(followingNavigationStep).label}
+        </strong>
+
+        <small>
+          {followingNavigationStep.name}
+        </small>
+      </div>
+    )}
+  </>
+) : (
+  <div className="navigation-instruction">
+    案内情報がありません
+  </div>
+)}
+
       </div>
 
       <div className="navigation-bottom-panel">
@@ -1073,14 +1149,27 @@ routeSteps[navigationStepIndex] || null;
         <strong>{routeDetails?.endName || "未設定"}</strong>
         </div>
 
-      <div className="navigation-trip-info">
-        <strong>
-          {routeDetails
-            ? `${Math.ceil(routeDetails.duration / 60)} 分`
-            : "--"}
-        </strong>
-        <span>当初の推定所要時間</span>
-      </div>
+        <div className="navigation-trip-info">
+  <strong>
+    {routeDetails
+      ? `${Math.ceil(routeDetails.duration / 60)} 分`
+      : "--"}
+  </strong>
+
+  <span>推定所要時間（全行程）</span>
+
+  <span>
+    到着予定：
+    {formatArrivalTime(routeDetails?.estimatedArrival)}
+  </span>
+
+  <span>
+    ルート距離：
+    {routeDetails
+      ? `${(routeDetails.distance / 1000).toFixed(1)} km`
+      : "--"}
+  </span>
+</div>
 
       <button
         type="button"

@@ -492,3 +492,76 @@
     flex: 1 1 100%;
   }
 }
+
+
+/* =====================================================
+   NAVIGATION GUIDANCE ENHANCEMENT
+===================================================== */
+
+/* 次の案内ラベル */
+
+.navigation-current-label {
+  margin-top: 14px;
+  color: #3985f7;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 1px;
+}
+
+/* その次の案内 */
+
+.navigation-following {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+
+  margin-top: 20px;
+  padding: 14px;
+
+  border: 1px solid var(--map-glass-border);
+  border-radius: 12px;
+
+  background: var(--map-glass-hover);
+  color: var(--map-glass-text);
+}
+
+.navigation-following > span {
+  color: var(--map-glass-muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.navigation-following > strong {
+  font-size: 16px;
+  line-height: 1.5;
+}
+
+.navigation-following > small {
+  color: var(--map-glass-muted);
+  font-size: 12px;
+}
+
+/* 現在の案内ステップ */
+
+.route-step {
+  padding: 9px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  transition:
+    background 0.2s ease,
+    border-color 0.2s ease;
+}
+
+.route-step.active {
+  border-color: #3985f7;
+  background: rgba(57, 133, 247, 0.12);
+}
+
+.route-step.active .route-step-icon {
+  background: #3985f7;
+  color: #ffffff;
+}
+
+.route-step.active strong {
+  color: #3985f7;
+}
