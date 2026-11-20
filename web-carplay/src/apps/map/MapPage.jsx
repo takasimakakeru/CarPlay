@@ -3,9 +3,9 @@ import * as maplibregl from "maplibre-gl";
 import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
 import "maplibre-gl/dist/maplibre-gl.css";
 import {
-    searchNominatim,
-    searchDrivingRoute,
-  } from "./mapServices";
+  searchNominatim,
+  searchDrivingRoutes,
+} from "./mapServices";
 import "./map.css";
 
 maplibregl.setWorkerUrl(workerUrl);
@@ -150,6 +150,11 @@ const [routeError, setRouteError] = useState("");
 
 const [routeSteps, setRouteSteps] = useState([]);
 const [routeDetails, setRouteDetails] = useState(null);
+const [avoidHighways, setAvoidHighways] = useState(false);
+const [avoidTolls, setAvoidTolls] = useState(false);
+const [avoidFerries, setAvoidFerries] = useState(false);
+const [routeOptions, setRouteOptions] = useState([]);
+const [selectedRouteId, setSelectedRouteId] = useState(null);
 
 const [isNavigating, setIsNavigating] = useState(false);
 
@@ -158,6 +163,18 @@ const [navigationStepIndex, setNavigationStepIndex] =
 
 const [navigationDistance, setNavigationDistance] =
   useState(0);
+// 目的地までの残り距離・残り時間
+const [remainingDistance, setRemainingDistance] =
+  useState(0);
+
+const [remainingDuration, setRemainingDuration] =
+  useState(0);
+// GPSシミュレーション
+const [isGpsSimulation, setIsGpsSimulation] =
+  useState(false);
+
+const simulationIndexRef = useRef(0);
+const navigationBaseDurationRef = useRef(0);
 
 const routeStartMarkerRef = useRef(null);
 const routeEndMarkerRef = useRef(null);
@@ -498,6 +515,48 @@ function selectEndCandidate(place) {
 }
 
 // 選択した候補からルートを計算
+// 選択したルートを現在のナビ機能に反映
+function applyRouteOption(route) {
+  const start = [
+    Number(selectedStart.lon),
+    Number(selectedStart.lat),
+  ];
+
+  const end = [
+    Number(selectedEnd.lon),
+    Number(selectedEnd.lat),
+  ];
+
+  setSelectedRouteId(route.id);
+
+  setRouteData({
+    geometry: route.geometry,
+    start,
+    end,
+  });
+
+  setRouteDetails({
+    distance: route.distance,
+    duration: route.duration,
+    startName: selectedStart.display_name,
+    endName: selectedEnd.display_name,
+    estimatedArrival: Date.now() + route.duration * 1000,
+  });
+
+  const steps = (route.legs?.[0]?.steps || []).map((step) => ({
+    name: step.name || "名称のない道路",
+    distance: step.distance,
+    type: step.type,
+    modifier: step.modifier,
+    instruction: step.instruction || "",
+    beginShapeIndex: step.beginShapeIndex,
+    endShapeIndex: step.endShapeIndex,
+  }));
+
+  setRouteSteps(steps);
+}
+
+// 複数ルートを計算
 async function calculateSelectedRoute() {
   if (!selectedStart || !selectedEnd) {
     setRouteError("出発地と目的地を選択してください。");
@@ -509,6 +568,8 @@ async function calculateSelectedRoute() {
   setRouteData(null);
   setRouteSteps([]);
   setRouteDetails(null);
+  setRouteOptions([]);
+  setSelectedRouteId(null);
 
   try {
     const start = [
@@ -521,37 +582,21 @@ async function calculateSelectedRoute() {
       Number(selectedEnd.lat),
     ];
 
-    const route = await searchDrivingRoute(start, end);
-
-    setRouteData({
-      geometry: route.geometry,
-      start,
-      end,
+    const routes = await searchDrivingRoutes(start, end, {
+      avoidHighways,
+      avoidTolls,
+      avoidFerries,
     });
 
-    setRouteDetails({
-      distance: route.distance,
-      duration: route.duration,
-      startName: selectedStart.display_name,
-      endName: selectedEnd.display_name,
-    
-      // 現時点での推定到着時刻
-      estimatedArrival: Date.now() + route.duration * 1000,
-    });
+    if (!routes.length) {
+      throw new Error("ルートが見つかりませんでした。");
+    }
 
-    // mapServices.js の返却形式に合わせる
-    const steps = route.legs[0].steps.map((step) => ({
-      name: step.name || "名称のない道路",
-      distance: step.distance,
-      type: step.type,
-      modifier: step.modifier,
-      instruction: step.instruction || "",
-    
-      beginShapeIndex: step.beginShapeIndex,
-      endShapeIndex: step.endShapeIndex,
-    }));
+    setRouteOptions(routes);
 
-    setRouteSteps(steps);
+    // 最初のルートを初期選択
+    applyRouteOption(routes[0]);
+
   } catch (err) {
     setRouteError(
       err.message || "ルート検索に失敗しました。"
@@ -559,7 +604,7 @@ async function calculateSelectedRoute() {
   } finally {
     setRouteLoading(false);
   }
-} 
+}
   
 function clearRoute() {
   // ルート情報を消去
@@ -568,6 +613,8 @@ function clearRoute() {
   setRouteDetails(null);
   setRouteSteps([]);
   setRouteError("");
+  setRouteOptions([]);
+setSelectedRouteId(null);
 
   // 出発地・目的地の候補一覧を消去
   setStartCandidates([]);
@@ -586,159 +633,306 @@ function clearRoute() {
 }
 
 useEffect(() => {
-    const map = mapRef.current;
-  
-    if (!map) return;
-  
-    const removeRoute = () => {
-      if (map.getLayer("planned-route")) {
-        map.removeLayer("planned-route");
-      }
-  
-      if (map.getLayer("planned-route-outline")) {
-        map.removeLayer("planned-route-outline");
-      }
-  
-      if (map.getSource("planned-route")) {
-        map.removeSource("planned-route");
-      }
-  
-      routeStartMarkerRef.current?.remove();
-      routeEndMarkerRef.current?.remove();
-  
-      routeStartMarkerRef.current = null;
-      routeEndMarkerRef.current = null;
-    };
-  
-    if (!routeData) {
-      removeRoute();
-      return;
+  const map = mapRef.current;
+
+  if (!map) return;
+
+  const removeRouteLayers = () => {
+    if (map.getLayer("planned-route")) {
+      map.removeLayer("planned-route");
     }
-  
-    const drawRoute = () => {
-      if (!map.getSource("planned-route")) {
-        map.addSource("planned-route", {
-          type: "geojson",
-          data: routeData.geometry,
-        });
-  
-        map.addLayer({
-          id: "planned-route-outline",
-          type: "line",
-          source: "planned-route",
-          layout: {
-            "line-cap": "round",
-            "line-join": "round",
-          },
-          paint: {
-            "line-color": "#ffffff",
-            "line-width": 10,
-            "line-opacity": 0.9,
-          },
-        });
-  
-        map.addLayer({
-          id: "planned-route",
-          type: "line",
-          source: "planned-route",
-          layout: {
-            "line-cap": "round",
-            "line-join": "round",
-          },
-          paint: {
-            "line-color": "#3985f7",
-            "line-width": 6,
-          },
-        });
-      } else {
-        map.getSource("planned-route").setData(routeData.geometry);
-      }
-  
-      const startElement = document.createElement("div");
-      startElement.className = "route-marker route-marker-start";
-      startElement.textContent = "A";
-  
-      const endElement = document.createElement("div");
-      endElement.className = "route-marker route-marker-end";
-      endElement.textContent = "B";
-  
-      routeStartMarkerRef.current?.remove();
-      routeEndMarkerRef.current?.remove();
-  
-      routeStartMarkerRef.current = new maplibregl.Marker({
-        element: startElement,
-      })
-        .setLngLat(routeData.start)
-        .addTo(map);
-  
-      routeEndMarkerRef.current = new maplibregl.Marker({
-        element: endElement,
-      })
-        .setLngLat(routeData.end)
-        .addTo(map);
-  
-      const bounds = new maplibregl.LngLatBounds();
-  
-      routeData.geometry.coordinates.forEach((coordinate) => {
+
+    if (map.getLayer("planned-route-outline")) {
+      map.removeLayer("planned-route-outline");
+    }
+
+    if (map.getSource("planned-route")) {
+      map.removeSource("planned-route");
+    }
+
+    routeStartMarkerRef.current?.remove();
+    routeEndMarkerRef.current?.remove();
+
+    routeStartMarkerRef.current = null;
+    routeEndMarkerRef.current = null;
+  };
+
+  if (!routeData) {
+    removeRouteLayers();
+    return;
+  }
+
+  const drawRoutes = () => {
+    // すべての候補ルートをGeoJSONにまとめる
+    const routes = routeOptions.length > 0
+      ? routeOptions
+      : [{
+          id: selectedRouteId,
+          geometry: routeData.geometry,
+        }];
+
+    const routeGeoJSON = {
+      type: "FeatureCollection",
+      features: routes.map((route) => ({
+        type: "Feature",
+        properties: {
+          routeId: route.id,
+          selected: route.id === selectedRouteId,
+        },
+        geometry: route.geometry,
+      })),
+    };
+
+    // ルートデータを追加・更新
+    if (!map.getSource("planned-route")) {
+      map.addSource("planned-route", {
+        type: "geojson",
+        data: routeGeoJSON,
+      });
+
+      // 白い縁取り
+      map.addLayer({
+        id: "planned-route-outline",
+        type: "line",
+        source: "planned-route",
+        layout: {
+          "line-cap": "round",
+          "line-join": "round",
+        },
+        paint: {
+          "line-color": "#ffffff",
+          "line-width": [
+            "case",
+            ["get", "selected"],
+            11,
+            7,
+          ],
+          "line-opacity": 0.9,
+        },
+      });
+
+      // 選択状態に応じて色と太さを変更
+      map.addLayer({
+        id: "planned-route",
+        type: "line",
+        source: "planned-route",
+        layout: {
+          "line-cap": "round",
+          "line-join": "round",
+        },
+        paint: {
+          "line-color": [
+            "case",
+            ["get", "selected"],
+            "#3985f7",
+            "#8793a5",
+          ],
+          "line-width": [
+            "case",
+            ["get", "selected"],
+            7,
+            4,
+          ],
+          "line-opacity": [
+            "case",
+            ["get", "selected"],
+            1,
+            0.7,
+          ],
+        },
+      });
+    } else {
+      map.getSource("planned-route").setData(routeGeoJSON);
+    }
+
+    // 出発地・目的地マーカー
+    const startElement = document.createElement("div");
+    startElement.className = "route-marker route-marker-start";
+    startElement.textContent = "A";
+
+    const endElement = document.createElement("div");
+    endElement.className = "route-marker route-marker-end";
+    endElement.textContent = "B";
+
+    routeStartMarkerRef.current?.remove();
+    routeEndMarkerRef.current?.remove();
+
+    routeStartMarkerRef.current = new maplibregl.Marker({
+      element: startElement,
+    })
+      .setLngLat(routeData.start)
+      .addTo(map);
+
+    routeEndMarkerRef.current = new maplibregl.Marker({
+      element: endElement,
+    })
+      .setLngLat(routeData.end)
+      .addTo(map);
+
+    // 全候補ルートが画面に収まるようにする
+    const bounds = new maplibregl.LngLatBounds();
+
+    routes.forEach((route) => {
+      route.geometry.coordinates.forEach((coordinate) => {
         bounds.extend(coordinate);
       });
-  
-      map.fitBounds(bounds, {
-        padding: 100,
-        maxZoom: 15,
-        duration: 1000,
-      });
-    };
-  
-    if (map.isStyleLoaded()) {
-      drawRoute();
-    } else {
-      map.once("load", drawRoute);
-    }
-  
-    return () => {
-      map.off("load", drawRoute);
-    };
-  }, [routeData]);  
+    });
 
-  const startNavigation = () => {
-    if (!routeData || !routeSteps.length) {
-      setRouteError("先にルートを計算してください。");
-      return;
-    }
-  
-    const firstStep = routeSteps.findIndex(
-      (step) => step.type !== "depart"
-    );
-  
-    setNavigationStepIndex(
-      firstStep >= 0 ? firstStep : 0
-    );
-  
-    setNavigationDistance(0);
-
-// ナビ開始時点の時刻を基準に到着予定を再計算
-setRouteDetails((current) =>
-  current
-    ? {
-        ...current,
-        estimatedArrival:
-          Date.now() + current.duration * 1000,
-      }
-    : current
-);
-
-setRouteError("");
-setIsNavigating(true);
+    map.fitBounds(bounds, {
+      padding: 100,
+      maxZoom: 15,
+      duration: 1000,
+    });
   };
-  
-  const stopNavigation = () => {
-    setIsNavigating(false);
+
+  if (map.isStyleLoaded()) {
+    drawRoutes();
+  } else {
+    map.once("load", drawRoutes);
+  }
+
+  return () => {
+    map.off("load", drawRoutes);
   };
+}, [routeData, routeOptions, selectedRouteId]);
+
+const startNavigation = (useSimulation = false) => {
+  if (!routeData || !routeSteps.length) {
+    setRouteError("先にルートを計算してください。");
+    return;
+  }
+
+  const firstStep = routeSteps.findIndex(
+    (step) => step.type !== "depart"
+  );
+
+  setNavigationStepIndex(
+    firstStep >= 0 ? firstStep : 0
+  );
+
+  setNavigationDistance(0);
+
+  setRemainingDistance(routeDetails.distance);
+  setRemainingDuration(routeDetails.duration);
+
+  navigationBaseDurationRef.current =
+    routeDetails.duration;
+
+  simulationIndexRef.current = 0;
+
+  setRouteDetails((current) =>
+    current
+      ? {
+          ...current,
+          estimatedArrival:
+            Date.now() + current.duration * 1000,
+        }
+      : current
+  );
+
+  setRouteError("");
+  setIsGpsSimulation(useSimulation);
+  setIsNavigating(true);
+};
+  
+const stopNavigation = () => {
+  setIsNavigating(false);
+  setIsGpsSimulation(false);
+};
+
+  // 実GPS・シミュレーター共通の位置更新処理
+const processNavigationPosition = (currentCoords) => {
+  const coordinates = routeData?.geometry?.coordinates;
+
+  if (!coordinates || coordinates.length < 2) return;
+
+  // 現在地マーカーを更新
+  setCurrentPosition(currentCoords);
+
+  // 地図を現在地に追従
+  mapRef.current?.easeTo({
+    center: currentCoords,
+    duration: 500,
+  });
+
+  // ルート上の現在位置を判定
+  const nearestIndex = findNearestRouteIndex(
+    currentCoords,
+    coordinates
+  );
+
+  // 目的地までの残り距離
+  const remaining = getDistanceAlongRoute(
+    coordinates,
+    nearestIndex,
+    coordinates.length - 1
+  );
+
+  setRemainingDistance(remaining);
+
+  // 残り時間を距離比率から推定
+  const totalRouteDistance = getDistanceAlongRoute(
+    coordinates,
+    0,
+    coordinates.length - 1
+  );
+
+  const totalDuration =
+    navigationBaseDurationRef.current;
+
+  const remainingTime =
+    totalRouteDistance > 0
+      ? totalDuration * (remaining / totalRouteDistance)
+      : 0;
+
+  setRemainingDuration(remainingTime);
+
+  // 到着予定時刻を更新
+  setRouteDetails((current) =>
+    current
+      ? {
+          ...current,
+          estimatedArrival:
+            Date.now() + remainingTime * 1000,
+        }
+      : current
+  );
+
+  // 次の案内ステップを探す
+  let nextIndex = routeSteps.findIndex(
+    (step) =>
+      step.type !== "depart" &&
+      Number.isFinite(step.beginShapeIndex) &&
+      step.beginShapeIndex >= nearestIndex
+  );
+
+  if (nextIndex === -1) {
+    nextIndex = routeSteps.length - 1;
+  }
+
+  setNavigationStepIndex(nextIndex);
+
+  // 次の案内地点までの距離
+  const targetIndex =
+    routeSteps[nextIndex]?.beginShapeIndex;
+
+  if (Number.isFinite(targetIndex)) {
+    setNavigationDistance(
+      getDistanceAlongRoute(
+        coordinates,
+        nearestIndex,
+        targetIndex
+      )
+    );
+  }
+};
 
   // ナビ中の現在地追従と案内更新
+// 実GPSによる位置更新
 useEffect(() => {
-  if (!isNavigating || !routeData) return;
+  if (!isNavigating || !routeData || isGpsSimulation) {
+    return;
+  }
 
   if (!navigator.geolocation) {
     setRouteError(
@@ -748,8 +942,6 @@ useEffect(() => {
     return;
   }
 
-  const coordinates = routeData.geometry.coordinates;
-
   const watchId = navigator.geolocation.watchPosition(
     (result) => {
       const currentCoords = [
@@ -757,56 +949,13 @@ useEffect(() => {
         result.coords.latitude,
       ];
 
-      // 現在地マーカーを更新
-      setCurrentPosition(currentCoords);
-
-      // 地図を現在地に追従させる
-      mapRef.current?.easeTo({
-        center: currentCoords,
-        duration: 500,
-      });
-
-      // ルート上の現在位置を判定
-      const nearestIndex = findNearestRouteIndex(
-        currentCoords,
-        coordinates
-      );
-
-      // 現在地より先にある次の案内を探す
-      let nextIndex = routeSteps.findIndex(
-        (step) =>
-          step.type !== "depart" &&
-          Number.isFinite(step.beginShapeIndex) &&
-          step.beginShapeIndex >= nearestIndex
-      );
-
-      // 該当する案内がなければ最後の案内を使う
-      if (nextIndex === -1) {
-        nextIndex = routeSteps.length - 1;
-      }
-
-      setNavigationStepIndex(nextIndex);
-
-      // 次の案内地点までの距離を計算
-      const targetIndex =
-        routeSteps[nextIndex]?.beginShapeIndex;
-
-      if (Number.isFinite(targetIndex)) {
-        setNavigationDistance(
-          getDistanceAlongRoute(
-            coordinates,
-            nearestIndex,
-            targetIndex
-          )
-        );
-      }
+      processNavigationPosition(currentCoords);
     },
 
     (error) => {
       setRouteError(
         `現在地を継続取得できませんでした。${error.message || ""}`
       );
-
       setIsNavigating(false);
     },
 
@@ -817,11 +966,53 @@ useEffect(() => {
     }
   );
 
-  // ナビ終了時にGPS監視を解除
   return () => {
     navigator.geolocation.clearWatch(watchId);
   };
-}, [isNavigating, routeData, routeSteps]);
+}, [isNavigating, routeData, routeSteps, isGpsSimulation]);
+
+// GPSシミュレーション
+useEffect(() => {
+  if (!isNavigating || !isGpsSimulation || !routeData) {
+    return;
+  }
+
+  const coordinates = routeData.geometry.coordinates;
+
+  if (!coordinates || coordinates.length < 2) {
+    setRouteError("シミュレーションできるルート座標がありません。");
+    setIsNavigating(false);
+    setIsGpsSimulation(false);
+    return;
+  }
+
+  // 出発地点から開始
+  let index = 0;
+  simulationIndexRef.current = 0;
+
+  processNavigationPosition(coordinates[index]);
+
+  // 700ミリ秒ごとにルート上を1座標ずつ進む
+  const timerId = window.setInterval(() => {
+    index += 1;
+
+    if (index >= coordinates.length) {
+      window.clearInterval(timerId);
+
+      setIsNavigating(false);
+      setIsGpsSimulation(false);
+      return;
+    }
+
+    simulationIndexRef.current = index;
+
+    processNavigationPosition(coordinates[index]);
+  }, 700);
+
+  return () => {
+    window.clearInterval(timerId);
+  };
+}, [isNavigating, isGpsSimulation, routeData, routeSteps]);
 
 const navigationStep =
 routeSteps[navigationStepIndex] || null;
@@ -908,6 +1099,43 @@ const followingNavigationStep =
     </button>
   </form>
 
+  <div className="route-options">
+    <strong>ルートオプション</strong>
+
+    <label>
+      <input
+        type="checkbox"
+        checked={avoidHighways}
+        onChange={(event) =>
+          setAvoidHighways(event.target.checked)
+        }
+      />
+      <span>高速道路をできるだけ避ける</span>
+    </label>
+
+    <label>
+      <input
+        type="checkbox"
+        checked={avoidTolls}
+        onChange={(event) =>
+          setAvoidTolls(event.target.checked)
+        }
+      />
+      <span>有料道路をできるだけ避ける</span>
+    </label>
+
+    <label>
+      <input
+        type="checkbox"
+        checked={avoidFerries}
+        onChange={(event) =>
+          setAvoidFerries(event.target.checked)
+        }
+      />
+      <span>フェリーをできるだけ避ける</span>
+    </label>
+  </div>
+
   {/* 出発地の候補 */}
 {startCandidates.length > 0 && (
   <div className="route-candidates">
@@ -969,7 +1197,52 @@ const followingNavigationStep =
     {routeLoading ? "ルート計算中..." : "ルートを計算"}
   </button>
 )}
+{/* 複数ルートの比較・選択 */}
+{routeOptions.length > 0 && (
+  <div className="route-candidates">
+    <strong>ルート候補を選択</strong>
 
+    {routeOptions.map((route, index) => (
+      <button
+        type="button"
+        key={route.id}
+        className={
+          selectedRouteId === route.id
+            ? "route-candidate selected"
+            : "route-candidate"
+        }
+        disabled={isNavigating}
+        onClick={() => applyRouteOption(route)}
+      >
+        <span>
+          <strong>ルート {index + 1}</strong>
+
+          <span>
+            {(route.distance / 1000).toFixed(1)} km
+            {" / "}
+            {Math.ceil(route.duration / 60)} 分
+          </span>
+
+          {route.summary?.hasToll && (
+            <small>有料道路あり</small>
+          )}
+
+          {route.summary?.hasHighway && (
+            <small>高速道路あり</small>
+          )}
+
+          {route.summary?.hasFerry && (
+            <small>フェリーあり</small>
+          )}
+        </span>
+
+        {selectedRouteId === route.id && (
+          <span>選択中 ✓</span>
+        )}
+      </button>
+    ))}
+  </div>
+)}
   {routeError && (
     <p className="route-error">{routeError}</p>
   )}
@@ -1008,6 +1281,14 @@ const followingNavigationStep =
   ▶ ナビを開始
 </button>
 
+<button
+  type="button"
+  className="navigation-start-button"
+  onClick={() => startNavigation(true)}
+>
+  ▶ GPSシミュレーション
+</button>
+
       <div className="route-directions">
         <strong>ルート案内</strong>
 
@@ -1017,7 +1298,7 @@ const followingNavigationStep =
   return (
     <div
   className={
-    index === navigationStepIndex
+    isNavigating && index === navigationStepIndex
       ? "route-step active"
       : "route-step"
   }
@@ -1151,23 +1432,22 @@ const followingNavigationStep =
 
         <div className="navigation-trip-info">
   <strong>
-    {routeDetails
-      ? `${Math.ceil(routeDetails.duration / 60)} 分`
-      : "--"}
+    {Math.ceil(remainingDuration / 60)} 分
   </strong>
 
-  <span>推定所要時間（全行程）</span>
+  <span>残り時間（推定）</span>
+
+  <strong>
+    {remainingDistance >= 1000
+      ? `${(remainingDistance / 1000).toFixed(1)} km`
+      : `${Math.round(remainingDistance)} m`}
+  </strong>
+
+  <span>目的地までの残り距離</span>
 
   <span>
     到着予定：
     {formatArrivalTime(routeDetails?.estimatedArrival)}
-  </span>
-
-  <span>
-    ルート距離：
-    {routeDetails
-      ? `${(routeDetails.distance / 1000).toFixed(1)} km`
-      : "--"}
   </span>
 </div>
 

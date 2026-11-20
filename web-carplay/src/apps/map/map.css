@@ -565,3 +565,55 @@
 .route-step.active strong {
   color: #3985f7;
 }
+
+/* 現在の案内ステップ */
+
+.route-step.active {
+  border: 1px solid #3985f7;
+  border-radius: 12px;
+  background: rgba(57, 133, 247, 0.14);
+  padding: 9px;
+}
+
+.route-step.active .route-step-icon {
+  background: #3985f7;
+  color: #ffffff;
+}
+
+.route-step.active strong {
+  color: #3985f7;
+}
+
+/* ルートオプション */
+.route-options {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid var(--map-glass-border);
+  border-radius: 12px;
+  background: var(--map-glass-hover);
+  color: var(--map-glass-text);
+}
+
+.route-options > strong {
+  font-size: 13px;
+  margin-bottom: 2px;
+}
+
+.route-options label {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.route-options input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: #3985f7;
+  cursor: pointer;
+}

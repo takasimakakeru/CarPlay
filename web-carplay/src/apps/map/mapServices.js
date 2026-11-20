@@ -240,7 +240,23 @@ function normalizeManeuvers(maneuvers) {
 }
 
 // 道路に沿った自動車ルートを検索
-export async function searchDrivingRoute(start, end) {
+export async function searchDrivingRoute(
+  start,
+  end,
+  options = {}
+) {
+  const {
+    avoidHighways = false,
+    avoidTolls = false,
+    avoidFerries = false,
+  } = options;
+
+  const autoCostingOptions = {
+    ...(avoidHighways && { use_highways: 0 }),
+    ...(avoidTolls && { use_tolls: 0 }),
+    ...(avoidFerries && { use_ferry: 0 }),
+  };
+  
   const requestBody = {
     locations: [
       {
@@ -255,6 +271,12 @@ export async function searchDrivingRoute(start, end) {
     costing: "auto",
     units: "km",
     language: "ja-JP",
+
+    ...(Object.keys(autoCostingOptions).length > 0 && {
+      costing_options: {
+        auto: autoCostingOptions,
+      },
+    }),
   };
 
   let response;
@@ -324,4 +346,140 @@ if (!data.trip?.legs?.length) {
       hasFerry: summary.has_ferry,
     },
   };
+}
+
+
+// 複数の自動車ルートを検索
+export async function searchDrivingRoutes(
+  start,
+  end,
+  options = {}
+) {
+  const {
+    avoidHighways = false,
+    avoidTolls = false,
+    avoidFerries = false,
+  } = options;
+
+  const autoCostingOptions = {
+    ...(avoidHighways && { use_highways: 0 }),
+    ...(avoidTolls && { use_tolls: 0 }),
+    ...(avoidFerries && { use_ferry: 0 }),
+  };
+
+  const requestBody = {
+    locations: [
+      {
+        lat: start[1],
+        lon: start[0],
+      },
+      {
+        lat: end[1],
+        lon: end[0],
+      },
+    ],
+    costing: "auto",
+    units: "km",
+    language: "ja-JP",
+
+    // 標準ルートに加えて代替ルートを最大2本要求
+    alternates: 2,
+
+    ...(Object.keys(autoCostingOptions).length > 0 && {
+      costing_options: {
+        auto: autoCostingOptions,
+      },
+    }),
+  };
+
+  let response;
+
+  try {
+    response = await fetch(VALHALLA_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(requestBody),
+    });
+  } catch (error) {
+    throw createNetworkError("Valhalla", error);
+  }
+
+  const data = await readApiResponse(
+    response,
+    "Valhalla"
+  );
+
+  if (!data.trip?.legs?.length) {
+    throw new Error(
+      `[Valhalla ルート計算エラー]\n` +
+      `エラーコード: ${data.status ?? "不明"}\n` +
+      `メッセージ: ${data.status_message || "不明"}`
+    );
+  }
+
+  // 標準ルートと代替ルートをまとめる
+  const trips = [
+    data.trip,
+    ...(Array.isArray(data.alternates)
+      ? data.alternates.map((alternate) =>
+          alternate.trip || alternate
+        )
+      : []),
+  ];
+
+  // 各ルートを既存のルート形式に変換
+  const routes = trips
+    .map((trip, index) => {
+      const leg = trip.legs?.[0];
+      const summary = trip.summary;
+
+      if (!leg?.shape || !summary) {
+        return null;
+      }
+
+      const coordinates = decodePolyline(
+        leg.shape,
+        6
+      );
+
+      if (coordinates.length < 2) {
+        return null;
+      }
+
+      return {
+        id: index,
+        geometry: {
+          type: "LineString",
+          coordinates,
+        },
+
+        distance: summary.length * 1000,
+        duration: summary.time,
+
+        legs: [
+          {
+            steps: normalizeManeuvers(
+              leg.maneuvers || []
+            ),
+          },
+        ],
+
+        summary: {
+          hasToll: summary.has_toll,
+          hasHighway: summary.has_highway,
+          hasFerry: summary.has_ferry,
+        },
+      };
+    })
+    .filter(Boolean);
+
+  if (!routes.length) {
+    throw new Error(
+      "有効なルートを取得できませんでした。"
+    );
+  }
+
+  return routes;
 }
