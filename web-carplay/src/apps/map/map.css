@@ -428,7 +428,7 @@
 }
 
 .navigation-bottom-panel span {
-  color: rgba(255, 255, 255, 0.65);
+  color: var(--map-glass-muted);
   font-size: 11px;
 }
 

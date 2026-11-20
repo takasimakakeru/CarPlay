@@ -5,6 +5,7 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import {
   searchNominatim,
   searchDrivingRoutes,
+  searchDrivingRoute,
 } from "./mapServices";
 import "./map.css";
 
@@ -125,6 +126,54 @@ function getDistanceAlongRoute(
   return distance;
 }
 
+// 現在地からルート上の最短距離をメートルで計算
+function getDistanceToRoute(position, coordinates) {
+  if (!coordinates || coordinates.length < 2) {
+    return Infinity;
+  }
+
+  const latScale = 111320;
+  const lonScale =
+    111320 * Math.cos((position[1] * Math.PI) / 180);
+
+  let minDistance = Infinity;
+
+  for (let i = 0; i < coordinates.length - 1; i++) {
+    const a = coordinates[i];
+    const b = coordinates[i + 1];
+
+    // 現在地を原点とした平面座標に変換
+    const ax = (a[0] - position[0]) * lonScale;
+    const ay = (a[1] - position[1]) * latScale;
+    const bx = (b[0] - position[0]) * lonScale;
+    const by = (b[1] - position[1]) * latScale;
+
+    const dx = bx - ax;
+    const dy = by - ay;
+    const lengthSquared = dx * dx + dy * dy;
+
+    const t =
+      lengthSquared === 0
+        ? 0
+        : Math.max(
+            0,
+            Math.min(
+              1,
+              -(ax * dx + ay * dy) / lengthSquared
+            )
+          );
+
+    const nearestX = ax + t * dx;
+    const nearestY = ay + t * dy;
+
+    const distance = Math.hypot(nearestX, nearestY);
+
+    minDistance = Math.min(minDistance, distance);
+  }
+
+  return minDistance;
+}
+
 function MapApp() {
   const mapRef = useRef(null);
   const mapContainerRef = useRef(null);
@@ -157,6 +206,19 @@ const [routeOptions, setRouteOptions] = useState([]);
 const [selectedRouteId, setSelectedRouteId] = useState(null);
 
 const [isNavigating, setIsNavigating] = useState(false);
+// 音声案内
+const [speechEnabled, setSpeechEnabled] = useState(true);
+
+const speechEnabledRef = useRef(true);
+
+// 案内ステップごとの読み上げ済み距離
+const spokenStepRef = useRef({
+  stepIndex: -1,
+  thresholds: [],
+});
+
+// 到着案内の重複防止
+const arrivalAnnouncedRef = useRef(false);
 
 const [navigationStepIndex, setNavigationStepIndex] =
   useState(0);
@@ -178,6 +240,12 @@ const navigationBaseDurationRef = useRef(0);
 
 const routeStartMarkerRef = useRef(null);
 const routeEndMarkerRef = useRef(null);
+
+// 自動リルートの監視
+const offRouteCountRef = useRef(0);
+const isReroutingRef = useRef(false);
+const lastRerouteAtRef = useRef(0);
+const navigationSessionRef = useRef(0);
 
   // 地図の初期化
   useEffect(() => {
@@ -615,6 +683,9 @@ function clearRoute() {
   setRouteError("");
   setRouteOptions([]);
 setSelectedRouteId(null);
+navigationSessionRef.current += 1;
+setIsGpsSimulation(false);
+offRouteCountRef.current = 0;
 
   // 出発地・目的地の候補一覧を消去
   setStartCandidates([]);
@@ -796,11 +867,69 @@ useEffect(() => {
   };
 }, [routeData, routeOptions, selectedRouteId]);
 
+// 日本語の音声案内
+function speakNavigation(message) {
+  if (!speechEnabledRef.current) return;
+
+  if (
+    typeof window === "undefined" ||
+    !("speechSynthesis" in window) ||
+    !("SpeechSynthesisUtterance" in window)
+  ) {
+    return;
+  }
+
+  const synth = window.speechSynthesis;
+
+  const utterance = new SpeechSynthesisUtterance(message);
+
+  utterance.lang = "ja-JP";
+  utterance.rate = 1.0;
+  utterance.pitch = 1.0;
+  utterance.volume = 1.0;
+
+  // 利用可能なら日本語音声を優先
+  const japaneseVoice = synth
+    .getVoices()
+    .find((voice) =>
+      voice.lang.toLowerCase().startsWith("ja")
+    );
+
+  if (japaneseVoice) {
+    utterance.voice = japaneseVoice;
+  }
+
+  // 古い案内が大量に残らないようにする
+  synth.cancel();
+  synth.speak(utterance);
+}
+
+// 音声案内のON/OFF
+function toggleSpeech() {
+  const nextValue = !speechEnabledRef.current;
+
+  speechEnabledRef.current = nextValue;
+  setSpeechEnabled(nextValue);
+
+  if (!nextValue) {
+    if ("speechSynthesis" in window) {
+      window.speechSynthesis.cancel();
+    }
+  } else {
+    speakNavigation("音声案内を開始します。");
+  }
+}
+
 const startNavigation = (useSimulation = false) => {
   if (!routeData || !routeSteps.length) {
     setRouteError("先にルートを計算してください。");
     return;
   }
+
+  navigationSessionRef.current += 1;
+offRouteCountRef.current = 0;
+isReroutingRef.current = false;
+lastRerouteAtRef.current = 0;
 
   const firstStep = routeSteps.findIndex(
     (step) => step.type !== "depart"
@@ -819,6 +948,16 @@ const startNavigation = (useSimulation = false) => {
     routeDetails.duration;
 
   simulationIndexRef.current = 0;
+  // 音声案内の状態を初期化
+spokenStepRef.current = {
+  stepIndex: -1,
+  thresholds: [],
+};
+
+arrivalAnnouncedRef.current = false;
+
+// ボタン操作中に読み上げを開始しておく
+speakNavigation("ナビを開始します。");
 
   setRouteDetails((current) =>
     current
@@ -836,15 +975,174 @@ const startNavigation = (useSimulation = false) => {
 };
   
 const stopNavigation = () => {
+  navigationSessionRef.current += 1;
   setIsNavigating(false);
   setIsGpsSimulation(false);
+  offRouteCountRef.current = 0;
+};
+
+// 現在地から目的地まで自動でルートを再計算
+const rerouteFromPosition = async (currentCoords) => {
+  if (!isNavigating || isReroutingRef.current) {
+    return;
+  }
+
+  const now = Date.now();
+
+  // 再検索の連続実行を防ぐ
+  if (now - lastRerouteAtRef.current < 15000) {
+    return;
+  }
+
+  const destination = routeData?.end;
+
+  if (!destination) return;
+
+  isReroutingRef.current = true;
+  lastRerouteAtRef.current = now;
+
+  const sessionId = navigationSessionRef.current;
+
+  try {
+    // 現在地から元の目的地まで再検索
+    const route = await searchDrivingRoute(
+      currentCoords,
+      destination,
+      {
+        avoidHighways,
+        avoidTolls,
+        avoidFerries,
+      }
+    );
+
+    // 検索中にナビが終了・変更されていたら反映しない
+    if (sessionId !== navigationSessionRef.current) {
+      return;
+    }
+
+    const routeId = `reroute-${now}`;
+
+    const updatedRoute = {
+      ...route,
+      id: routeId,
+    };
+
+    const endName =
+      routeDetails?.endName ||
+      selectedEnd?.display_name ||
+      "目的地";
+
+    // 新しい案内ステップ
+    const newSteps = (
+      route.legs?.[0]?.steps || []
+    ).map((step) => ({
+      name: step.name || "名称のない道路",
+      distance: step.distance,
+      type: step.type,
+      modifier: step.modifier,
+      instruction: step.instruction || "",
+      beginShapeIndex: step.beginShapeIndex,
+      endShapeIndex: step.endShapeIndex,
+    }));
+
+    // 新しいルートを地図とナビに反映
+    setRouteData({
+      geometry: route.geometry,
+      start: currentCoords,
+      end: destination,
+    });
+
+    setRouteOptions([updatedRoute]);
+    setSelectedRouteId(routeId);
+    setRouteSteps(newSteps);
+
+    setRouteDetails({
+      distance: route.distance,
+      duration: route.duration,
+      startName: "現在地（リルート）",
+      endName,
+      estimatedArrival:
+        Date.now() + route.duration * 1000,
+    });
+
+    // 残り距離・時間も新ルートで初期化
+    setRemainingDistance(route.distance);
+    setRemainingDuration(route.duration);
+
+    navigationBaseDurationRef.current = route.duration;
+
+    const firstStep = newSteps.findIndex(
+      (step) => step.type !== "depart"
+    );
+
+    setNavigationStepIndex(
+      firstStep >= 0 ? firstStep : 0
+    );
+
+    setNavigationDistance(0);
+    simulationIndexRef.current = 0;
+
+    setRouteError("");
+
+    // 新しいルート用に案内履歴をリセット
+spokenStepRef.current = {
+  stepIndex: -1,
+  thresholds: [],
+};
+
+arrivalAnnouncedRef.current = false;
+
+speakNavigation("ルートを変更しました。新しいルートで案内します。");
+
+  } catch (err) {
+    // 失敗しても元のルートは残す
+    if (sessionId === navigationSessionRef.current) {
+      setRouteError(
+        `自動リルートに失敗しました。元のルートで案内を続けます。${err.message || ""}`
+      );
+    }
+  } finally {
+    if (sessionId === navigationSessionRef.current) {
+      isReroutingRef.current = false;
+      offRouteCountRef.current = 0;
+    }
+  }
 };
 
   // 実GPS・シミュレーター共通の位置更新処理
-const processNavigationPosition = (currentCoords) => {
-  const coordinates = routeData?.geometry?.coordinates;
-
-  if (!coordinates || coordinates.length < 2) return;
+  const processNavigationPosition = (
+    currentCoords,
+    accuracy = null
+  ) => {
+    const coordinates = routeData?.geometry?.coordinates;
+  
+    if (!coordinates || coordinates.length < 2) return;
+  
+    // GPS測位の精度が十分な場合だけ逸脱判定する
+    if (
+      !isReroutingRef.current &&
+      (accuracy === null || accuracy <= 50)
+    ) {
+      const distanceFromRoute = getDistanceToRoute(
+        currentCoords,
+        coordinates
+      );
+  
+      if (distanceFromRoute > 50) {
+        offRouteCountRef.current += 1;
+  
+        // 3回連続で逸脱したら自動リルート
+        if (offRouteCountRef.current >= 3) {
+          offRouteCountRef.current = 0;
+          rerouteFromPosition(currentCoords);
+        }
+      } else if (distanceFromRoute < 35) {
+        // ルート付近に戻ったらカウントをリセット
+        offRouteCountRef.current = 0;
+      }
+    }
+  
+    // ここから下は既存の処理をそのまま残す
 
   // 現在地マーカーを更新
   setCurrentPosition(currentCoords);
@@ -916,15 +1214,70 @@ const processNavigationPosition = (currentCoords) => {
   const targetIndex =
     routeSteps[nextIndex]?.beginShapeIndex;
 
-  if (Number.isFinite(targetIndex)) {
-    setNavigationDistance(
-      getDistanceAlongRoute(
+    if (Number.isFinite(targetIndex)) {
+      const distanceToStep = getDistanceAlongRoute(
         coordinates,
         nearestIndex,
         targetIndex
-      )
-    );
-  }
+      );
+    
+      setNavigationDistance(distanceToStep);
+    
+      const currentStep = routeSteps[nextIndex];
+    
+      // 案内ステップが変わったら読み上げ履歴をリセット
+      if (
+        spokenStepRef.current.stepIndex !== nextIndex
+      ) {
+        spokenStepRef.current = {
+          stepIndex: nextIndex,
+          thresholds: [],
+        };
+      }
+    
+      if (
+        currentStep &&
+        currentStep.type !== "depart" &&
+        currentStep.type !== "arrive"
+      ) {
+        const display = getManeuverDisplay(currentStep);
+    
+        let threshold = null;
+        let message = "";
+    
+        if (distanceToStep <= 80) {
+          threshold = 80;
+          message = `まもなく${display.label}です。`;
+        } else if (distanceToStep <= 300) {
+          threshold = 300;
+          message = `約300メートル先、${display.label}です。`;
+        } else if (distanceToStep <= 1000) {
+          threshold = 1000;
+          message = `約1キロメートル先、${display.label}です。`;
+        }
+    
+        if (
+          threshold !== null &&
+          !spokenStepRef.current.thresholds.includes(threshold)
+        ) {
+          spokenStepRef.current.thresholds.push(threshold);
+          speakNavigation(message);
+        }
+      }
+    }
+    
+    // 目的地に十分近づいたら到着案内
+    if (
+      remaining <= 30 &&
+      !arrivalAnnouncedRef.current
+    ) {
+      arrivalAnnouncedRef.current = true;
+    
+      speakNavigation("目的地に到着しました。ナビを終了します。");
+    
+      setIsNavigating(false);
+      setIsGpsSimulation(false);
+    }
 };
 
   // ナビ中の現在地追従と案内更新
@@ -949,7 +1302,10 @@ useEffect(() => {
         result.coords.latitude,
       ];
 
-      processNavigationPosition(currentCoords);
+      processNavigationPosition(
+        currentCoords,
+        result.coords.accuracy
+      );
     },
 
     (error) => {
@@ -1378,6 +1734,14 @@ const followingNavigationStep =
         <div className="navigation-top-panel">
         <span className="navigation-status">NAVIGATION</span>
         <strong>ナビゲーション中</strong>
+
+        <button
+  type="button"
+  className="navigation-start-button"
+  onClick={toggleSpeech}
+>
+  {speechEnabled ? "音声案内 ON" : "音声案内 OFF"}
+</button>
 
         
 {navigationStep ? (
